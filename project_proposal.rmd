@@ -3,16 +3,33 @@ This is the project proposal!
 Read the data set:
 
 ```{r}
-df <- read.csv("student-mat.csv", sep=";")
+df <- read.csv("diabetes_binary_5050split_health_indicators_BRFSS2015.csv")
 ```
 
-read first 5 lines
+PROJECT PROPOSAL RESPONSE
+
+1. Project title: People with Diabetes
+
+2. Names of everyone in the group:
+
+- Henry Tan ht492
+- Casper Liao cl2622
+
+3. One sentence describing the dataset and url link to the dataset (e.g. webscraped data of Ithaca restaurants on Yelp, or county-level income data downloaded from the US census bureau website, etc)
+
+The Diabetes Health Indicators Dataset contains healthcare statistics and lifestyle survey information about people in general along with their diagnosis of diabetes.
+
+Link: https://www.cdc.gov/brfss/annual_data/annual_2014.html
+
+
+4. One or two questions about the dataset you will answer in the project, preferably one.
+
+Question: What kind of group of people (combination of other health characteristics) has a higher chance of getting diabetes?
+
+5. The head of the dataset (first 6 lines). 
+
 ```{r}
 head(df)
 ```
 
 
-PROJECT PROPOSAL RESPONSE
-
-
-https://archive.ics.uci.edu/dataset/320/student+performance
