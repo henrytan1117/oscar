@@ -3,10 +3,16 @@ This is the project proposal!
 Read the data set:
 
 ```{r}
-df <- read.csv("student-mat.csv")
+df <- read.csv("student-mat.csv", sep=";")
 ```
 
 read first 5 lines
 ```{r}
 head(df)
 ```
+
+
+PROJECT PROPOSAL RESPONSE
+
+
+https://archive.ics.uci.edu/dataset/320/student+performance
