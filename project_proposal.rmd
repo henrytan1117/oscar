@@ -1,0 +1,12 @@
+This is the project proposal!
+
+Read the data set:
+
+```{r}
+df <- read.csv("ObesityDataSet_raw_and_data_sinthetic")
+```
+
+read first 5 lines
+```{r}
+head(df)
+```
