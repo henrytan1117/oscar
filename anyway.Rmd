@@ -1,0 +1,36 @@
+---
+title: "anyway"
+output: html_document
+---
+
+```{r, echo=FALSE}
+df <- read.csv("Students Social Media Addiction.csv")
+head(df)
+```
+
+
+Data Exploration
+
+```{r}
+# str(df)
+
+
+# check for NA's
+sum(is.na(df))
+
+rows <- nrow(df)
+rows
+df <- na.omit(df)
+rows <- nrow(df)
+rows
+
+names(df)
+str(df)
+
+# create indexing for binary v.s. continuous
+
+```
+
+```{r}
+table(df$Age)
+```

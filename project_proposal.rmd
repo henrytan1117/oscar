@@ -16,7 +16,12 @@ Henry Tan ht492; Casper Liao cl2622
 
 + One sentence: The Diabetes Health Indicators Dataset contains healthcare statistics and lifestyle survey information about people in general along with their diagnosis of diabetes.
 
+# TODO!
 + Link: https://www.cdc.gov/brfss/annual_data/annual_2014.html
++ Link2: https://archive.ics.uci.edu/dataset/891/cdc+diabetes+health+indicators
+
+https://www.kaggle.com/datasets/adilshamim8/social-media-addiction-vs-relationships
+
 
 ## (4) One or two questions about the dataset you will answer in the project, preferably one.
 
@@ -25,8 +30,10 @@ Question: What kind of group of people (combination of other health characterist
 ## (5) The head of the dataset (first 6 lines). 
 
 ```{r, echo=FALSE}
-df <- read.csv("diabetes_binary_5050split_health_indicators_BRFSS2015.csv")
+df <- read.csv("Students Social Media Addiction.csv")
 head(df)
 ```
+
+
 
 
