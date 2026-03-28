@@ -1,10 +1,17 @@
 ### This file is used to extract the list of nominated films
-### From 2000 to 2024
+### From 2000 to 2025 for our analysis.
+### The html is extracted from https://awardsdatabase.oscars.org/
+### Where we filter the results to be from 2000 to 2025, and the category as Best Picture
 
+# Challenge: The only thing is the Oscarr database is not updated with 2025 data
+# So we need to manually add them for the 2025 at the end
 
 library(rvest)
 library(purrr)
 library(dplyr)
+
+# We utilized html elements in conducting data extraction instead of using text
+# html_text2() serves as the function that extracts the text in the html 
 
 page <- read_html("academy.html")
 year_groups <- page |> html_elements(".result-group")
@@ -22,8 +29,11 @@ oscar_list <- map(year_groups, function(group) {
   list(year = year, films = films)
 })
 
+# Return a vector
 names(oscar_list) <- map_chr(oscar_list, "year")
 
+# Extract year, ceremony, film name, whether they are the winners
+# Return the observation by row
 df <- map_dfr(oscar_list, ~ .x$films |> mutate(year = .x$year)) |>
   select(year, film, winner) |>
   mutate(
@@ -65,3 +75,8 @@ df <- rbind(df, df_2025)
 
 # Verify the update
 tail(df, 10)
+
+# Export the dataframe as CSV
+write.csv(df, file="academy.csv", row.names=FALSE)
+
+
