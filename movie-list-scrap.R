@@ -65,7 +65,3 @@ df <- rbind(df, df_2025)
 
 # Verify the update
 tail(df, 10)
-
-
-
-
