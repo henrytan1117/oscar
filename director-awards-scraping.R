@@ -67,9 +67,15 @@ bd_counts <- academy_rt %>%
 result <- academy_rt %>%
   left_join(bd_counts, by = c("film", "director", "year"))
 
+academy <- read_csv("academy.csv") %>%
+  select(film, winner)
+
+result <- academy_rt %>%
+  left_join(bd_counts, by = c("film", "director", "year")) %>%
+  left_join(academy, by = "film")
+
 cat("Rows:", nrow(result), "\n")
 write_csv(result, "film_director_bd_wins.csv")
-
 
 
 
