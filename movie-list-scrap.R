@@ -80,5 +80,3 @@ tail(df, 10)
 write.csv(df, file="academy.csv", row.names=FALSE)
 
 
-
-

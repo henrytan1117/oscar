@@ -57,3 +57,6 @@ rownames(final_df) <- NULL
 
 head(final_df)
 nrow(final_df) == nrow(df)
+
+# Export as CSV
+write.csv(final_df, "wiki-link.csv", row.names=FALSE)
