@@ -47,3 +47,6 @@ write_csv(academy_enriched, "academy_with_editing.csv")
 # ── 5. Quick sanity check ─────────────────────────────────────────────────────
 cat("Nominated for editing:", sum(academy_enriched$nominated_for_film_editing), "\n")
 cat("Awarded for editing:  ", sum(academy_enriched$awarded_for_film_editing),   "\n")
+
+academy_enriched |>
+  filter(winner == TRUE, awarded_for_film_editing == TRUE)
