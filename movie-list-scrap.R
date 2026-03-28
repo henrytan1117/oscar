@@ -46,6 +46,7 @@ df <- map_dfr(oscar_list, ~ .x$films |> mutate(year = .x$year)) |>
 # Convert the file above into dataframe
 df <- data.frame(df)
 
+
 # The Academy Awards catalogue is not fully updated with 2025 data
 # So we will manually add the 2025 data into the data frame
 
@@ -75,6 +76,14 @@ df <- rbind(df, df_2025)
 
 # Verify the update
 tail(df, 10)
+
+
+### Changes made when realizing the error
+
+# 1. Discover when checking the wikipedia links
+# Moulin Rouge in 2001 should have an exclaimation mark
+df[10,3] <- 'Moulin Rouge!'
+df[29,3] <- 'Good Night, and Good Luck'
 
 # Export the dataframe as CSV
 write.csv(df, file="academy.csv", row.names=FALSE)
