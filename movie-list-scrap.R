@@ -2,7 +2,7 @@ library(rvest)
 library(purrr)
 library(dplyr)
 
-page <- read_html("Academyc Best Picture 2000 2025.html")
+page <- read_html("academy.html")
 year_groups <- page |> html_elements(".result-group")
 
 oscar_list <- map(year_groups, function(group) {
@@ -27,5 +27,4 @@ df <- map_dfr(oscar_list, ~ .x$films |> mutate(year = .x$year)) |>
     year     = as.integer(stringr::str_extract(year, "\\d{4}"))
   ) |>
   select(year, ceremony, film, winner)
-
 
