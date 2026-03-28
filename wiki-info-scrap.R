@@ -80,6 +80,8 @@ rownames(final_complete_df) <- NULL
 # View the final product
 head(final_complete_df)
 
+write.csv(final_complete_df, "wiki-info-scrap.csv", row.names=F)
+
 
 
 
