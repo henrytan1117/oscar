@@ -175,7 +175,7 @@ df_final <- merge.6 %>%
     
     # 4. Financials
     budget_millions = Budget_Millions,
-    box_bffice_millions = Box_Office_Millions,
+    box_office_millions = Box_Office_Millions,
     
     # 5. Other Awards
     nominee_film_edit = nominated_for_film_editing,
