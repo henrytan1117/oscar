@@ -196,6 +196,10 @@ df_final <- merge.6 %>%
     rotten_tomato = url,
   )
 
+
+# Order the dataset
+df_final <- df_final[order(df_final$release_year),]
+
 # Export the csv file
 write.csv(df_final, "academy_final.csv", row.names=FALSE)
 
