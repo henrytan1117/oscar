@@ -33,7 +33,12 @@ Based on the rough structure above, we have the following steps
 + genre_: The genre variables are too sparse. We can try doing two 
 
 
-
+```{r}
+names(d)
+# dropping columns
+d <- d[, !names(dat) %in% c("director", "release_year", "wikipedia", "rotten_tomato")]
+names(d)
+```
 
 
 
