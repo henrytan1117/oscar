@@ -1,5 +1,56 @@
 ---
-title: "eda_april_11"
-output: html_document
+title: "EDA"
+output: pdf_document
 ---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, 
+                      error = TRUE, 
+                      tidy.opts=list(width.cutoff=80), 
+                      tidy  = TRUE,
+                      eval = TRUE, collapse = TRUE, comment = NA)
+```
+
+# Dataset Inspection
+```{r}
+d <- read.csv("academy_final.csv")
+str(d)
+```
+Based on the rough structure above, we have the following steps
+
+(1) Dropping not useful variables. This include
++ release_year
++ director
++ wikipedia
++ rotten_tomato
+
+
+(2) In addition, we should organize the following variables
++ genres: Counting the number of genres using the variable, and then drop it
++ rating: Organize them to be only PG13, R and G (There is a NA value)
++ language: We should inspect the type of languages of the movies by category, drop it if most of them are English
++ genre_: The genre variables are too sparse. We can try doing two 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
