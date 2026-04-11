@@ -196,19 +196,186 @@ d %>%
 
 
 ```
+# Correlation Map
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(ggcorrplot)
+
+# 1. Filter for numeric variables AND exclude all genres
+# This keeps the 'clean' numerical/award variables
+numeric_data_no_genres <- d %>% 
+  select(where(is.numeric)) %>% 
+  select(-starts_with("genre_"))
+
+# 2. Compute Correlation
+corr_matrix <- cor(numeric_data_no_genres, use = "complete.obs")
+
+# 3. Plot Heatmap
+# Since we have fewer variables now, we can set lab = TRUE to see the exact coefficients
+ggcorrplot(corr_matrix, 
+           hc.order = TRUE, 
+           type = "lower",
+           lab = TRUE, 
+           lab_size = 3,
+           title = "Oscar Variable Correlation (Excluding Genres)",
+           colors = c("#6D9EC1", "white", "#E46726"))
+
+```
+# Does winning GG convert to winning Oscar Best Picture
+
+```{r}
+
+par(mfrow=c(1,2))
+
+# A. Golden Globe Momentum
+# Does a GG win 'lock in' an Oscar?
+d %>%
+  group_by(won_drama_gg) %>%
+  summarise(win_rate = mean(best_picture_winner)) %>%
+  ggplot(aes(x = factor(won_drama_gg), y = win_rate, fill = factor(won_drama_gg))) +
+  geom_col() +
+  scale_x_discrete(labels = c("Lost GG-Drama", "Won GG-Drama")) +
+  labs(title = "The Golden Globe Boost", y = "Best Picture Win Probability") +
+  theme_minimal()
 
 
+d %>%
+  group_by(won_comedy_gg) %>%
+  summarise(win_rate = mean(best_picture_winner)) %>%
+  ggplot(aes(x = factor(won_comedy_gg), y = win_rate, fill = factor(won_comedy_gg))) +
+  geom_col() +
+  scale_x_discrete(labels = c("Lost GG-Comedy", "Won GG-Comedy")) +
+  labs(title = "The Golden Globe Boost", y = "Best Picture Win Probability") +
+  theme_minimal()
+```
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Create a summary for Drama
+drama_summary <- d %>%
+  group_by(won_drama_gg) %>%
+  summarise(
+    Total_Films = n(),
+    Oscar_Wins = sum(best_picture_winner),
+    Win_Rate = mean(best_picture_winner)
+  ) %>%
+  mutate(Category = "Drama") %>%
+  rename(Won_GG = won_drama_gg)
+
+# Create a summary for Comedy
+comedy_summary <- d %>%
+  group_by(won_comedy_gg) %>%
+  summarise(
+    Total_Films = n(),
+    Oscar_Wins = sum(best_picture_winner),
+    Win_Rate = mean(best_picture_winner)
+  ) %>%
+  mutate(Category = "Comedy") %>%
+  rename(Won_GG = won_comedy_gg)
+
+# Combine them into one professional table
+gg_conversion_table <- bind_rows(drama_summary, comedy_summary) %>%
+  filter(Won_GG == 1) %>% # We only care about the films that actually won the GG
+  select(Category, Total_Films, Oscar_Wins, Win_Rate) %>%
+  mutate(Win_Rate = scales::percent(Win_Rate, accuracy = 0.1))
+
+print(gg_conversion_table)
+
+```
+
+# Does winning for best editing film convert to winning Oscar Best Picture
+```{r}
+# B. The 'Best Editing' Rule
+# Analyzing if the film_edit award is a prerequisite
+d %>%
+  group_by(award_film_edit) %>%
+  summarise(win_rate = mean(best_picture_winner)) %>%
+  ggplot(aes(x = factor(award_film_edit), y = win_rate)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Technical Prerequisite: Best Editing", x = "Won Best Editing Award") +
+  theme_light()
+```
+```{r}
+# B. The 'Best Editing' Rule
+# Analyzing if the film_edit nominee is a prerequisite
+d %>%
+  group_by(nominee_film_edit) %>%
+  summarise(win_rate = mean(best_picture_winner)) %>%
+  ggplot(aes(x = factor(nominee_film_edit), y = win_rate)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Technical Prerequisite: Best Editing", x = "Nominated for Best Editing Award") +
+  theme_light()
+```
+# The distribution of winners in box office and tomotometer
+
+```{r}
+# C. Tomatometer vs Box Office
+ggplot(d, aes(x = tomatometer, y = box_office_norm, color = factor(best_picture_winner))) +
+  geom_point(aes(size = total_academy_nominations), alpha = 0.6) +
+  scale_color_manual(values = c("grey", "gold"), name = "Best Picture Winner") +
+  labs(title = "Critic Scores vs. Commercial Success",
+       x = "Tomatometer Score",
+       y = "Box Office (Normalized-Year)") +
+  theme_bw()
+```
+```{r}
+# C. Tomatometer vs Box Office
+ggplot(d, aes(x = tomatometer, y = popcornmeter, color = factor(best_picture_winner))) +
+  geom_point(aes(size = total_academy_nominations), alpha = 0.6) +
+  scale_color_manual(values = c("grey", "gold"), name = "Best Picture Winner") +
+  labs(title = "Critic Scores Public VS Expert",
+       x = "Tomatometer Score",
+       y = "Popcornmeter Score") +
+  theme_bw()
+
+```
+```{r}
+d[d$popcornmeter<25,]
+
+```
+
+```{r}
+# D. The 'Epic' Factor: Runtime
+ggplot(d, aes(x = running_time_minutes, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Film Length", x = "Minutes", fill = "Winner") +
+  theme_minimal()
+```
 
 
+```{r}
+# D. The 'Epic' Factor: words count
+ggplot(d, aes(x = words, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Words Count", x = "Word Count", fill = "Winner") +
+  theme_minimal()
+```
+
+```{r}
+# D. The 'Epic' Factor: character count
+ggplot(d, aes(x = characters, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Character Number", x = "Character Count", fill = "Winner") +
+  theme_minimal()
+```
 
 
-
-
-
-
-
-
-
-
+```{r}
+# D. The 'Epic' Factor: character count
+ggplot(d, aes(x = total_academy_nominations, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Award Nominations", x = "Total Academy Nominations", fill = "Winner") +
+  theme_minimal()
+```
+```{r}
+# D. The 'Epic' Factor: character count
+ggplot(d, aes(x = total_academy_award_exclude_best_pic, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Awards Exclude Best Pics", x = "Total Academy Wins Exclude Best Pics", fill = "Winner") +
+  theme_minimal()
+```
 
 
