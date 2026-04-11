@@ -78,35 +78,55 @@ d <- d[, !names(d) %in% c("language")]
 d[d$box_office_millions == 2878, ]$box_office_millions = 2878/1000000
 
 names(d)
-# aggregate average box office by year
-box_by_year <- aggregate(box_office_millions ~ release_year, data = d, FUN = mean, na.rm = TRUE)
+plot_box_office <- function(df, box_col = "box_office_millions") {
+  
+  # aggregate average box office by year
+  box_by_year <- aggregate(df[[box_col]] ~ df$release_year, data = df, FUN = mean, na.rm = TRUE)
+  colnames(box_by_year) <- c("release_year", box_col)
+  
+  # trend line
+  print(
+    ggplot(box_by_year, aes(x = release_year, y = .data[[box_col]])) +
+      geom_line() + geom_point() +
+      geom_smooth(method = "lm", se = TRUE, color = "blue") +
+      labs(x = "Release Year", y = "Average Box Office", title = "Box Office Over Time")
+  )
+  
+  # overall bar chart ordered by year
+  print(
+    ggplot(df, aes(x = reorder(film, release_year), y = .data[[box_col]])) +
+      geom_bar(stat = "identity") +
+      labs(x = "Film", y = "Box Office") +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 5))
+  )
+  
+  # interactive stacked bar chart
+  p <- ggplot(df, aes(x = factor(release_year), y = .data[[box_col]],
+                      fill = reorder(film, .data[[box_col]]),
+                      text = paste("Film:", film, "<br>Box Office:", .data[[box_col]]))) +
+    geom_bar(stat = "identity") +
+    labs(x = "Year", y = "Box Office") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+  
+  print(ggplotly(p, tooltip = "text"))
+}
 
-# plot the average box office by year
-ggplot(box_by_year, aes(x = release_year, y = box_office_millions)) +
-  geom_line() +
-  geom_point() +
-  geom_smooth(method = "lm", se = TRUE, color = "blue") +
-  labs(x = "Release Year", y = "Average Box Office ($)", title = "Box Office Over Time")
-
-# overal bar chart
-ggplot(d, aes(x = reorder(film, release_year), y = box_office_millions)) +
-  geom_bar(stat = "identity") +
-  labs(x = "Film", y = "Box Office ($)") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 5))
-
-# stacked bar chart for box office by year
-library(plotly)
-p <- ggplot(d, aes(x = factor(release_year), y = box_office_millions, 
-                     fill = reorder(film, box_office_millions),
-                     text = paste("Film:", film, "<br>Box Office: $", box_office_millions))) +
-  geom_bar(stat = "identity") +
-  labs(x = "Year", y = "Box Office ($)") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-
-ggplotly(p, tooltip = "text")
+# call with raw
+plot_box_office(d)
 ```
 
+```{r}
+# normalize the box office by year~~~
+library(dplyr)
+
+d <- d %>%
+  group_by(release_year) %>%
+  mutate(box_office_norm = box_office_millions / sum(box_office_millions, na.rm = TRUE)) %>%
+  ungroup()
+
+# call with normalized
+plot_box_office(d, box_col = "box_office_norm")
+```
 
 
 
