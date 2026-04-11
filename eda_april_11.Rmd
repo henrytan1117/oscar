@@ -128,7 +128,74 @@ d <- d %>%
 plot_box_office(d, box_col = "box_office_norm")
 ```
 
+```{r}
+# histograms for genres
 
+library(tidyr)
+# grab all genre indicator columns
+genre_cols <- names(d)[grepl("^genre_", names(d)) & names(d) != "genre_count"]
+
+# pivot to long format for easy plotting
+genre_long <- d %>%
+  select(film, best_picture_winner, all_of(genre_cols)) %>%
+  pivot_longer(cols = all_of(genre_cols), names_to = "genre", values_to = "has_genre") %>%
+  filter(has_genre == 1) %>%
+  mutate(genre = gsub("genre_", "", genre),   # clean up prefix
+         genre = gsub("_", " ", genre))        # underscores -> spaces
+
+# simple genre frequency histogram
+ggplot(genre_long, aes(x = reorder(genre, -table(genre)[genre]))) +
+  geom_bar() +
+  labs(x = "Genre", y = "Count", title = "Genre Distribution") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# genre histogram stacked by winner status
+ggplot(genre_long, aes(x = reorder(genre, -table(genre)[genre]), 
+                       fill = factor(best_picture_winner))) +
+  geom_bar(position = "stack") +
+  labs(x = "Genre", y = "Count", fill = "Won Best Picture", 
+       title = "Genre Distribution by Winner Status") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# percentage of winner within genre
+ggplot(genre_long, aes(x = reorder(genre, -table(genre)[genre]), 
+                       fill = factor(best_picture_winner))) +
+  geom_bar(position = "fill") +
+  labs(x = "Genre", y = "Proportion", fill = "Won Best Picture", 
+       title = "Win Rate by Genre") +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# calculate win rate per genre to use for ordering
+win_rate <- genre_long %>%
+  group_by(genre) %>%
+  summarise(win_rate = mean(best_picture_winner == 1)) %>%
+  arrange(desc(win_rate))
+
+ggplot(genre_long, aes(x = reorder(genre, -win_rate$win_rate[match(genre, win_rate$genre)]), 
+                       fill = factor(best_picture_winner))) +
+  geom_bar(position = "fill") +
+  labs(x = "Genre", y = "Proportion", fill = "Won Best Picture", 
+       title = "Win Rate by Genre") +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# genre count and winning rate distribution
+table(d$genre_count)
+
+table(d[d$best_picture_winner == 1, ]$genre_count)
+d %>%
+  group_by(genre_count) %>%
+  summarise(win_rate = mean(best_picture_winner == 1, na.rm = TRUE)) %>%
+  ggplot(aes(x = factor(genre_count), y = win_rate)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = "Number of Genres", y = "Win Rate", title = "Best Picture Win Rate by Genre Count")
+
+
+```
 
 
 
