@@ -24,6 +24,7 @@ head(movie_analysis)
 
 # Merge with the current dataset
 result <- merge(academy1, movie_analysis, by = "film")
+result <- result[order(result$release_year), ]
 write.csv(result, "academy_final.csv", row.names = FALSE)
 
 
