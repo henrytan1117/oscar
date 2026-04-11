@@ -30,16 +30,82 @@ Based on the rough structure above, we have the following steps
 + genres: Counting the number of genres using the variable, and then drop it
 + rating: Organize them to be only PG13, R and G (There is a NA value)
 + language: We should inspect the type of languages of the movies by category, drop it if most of them are English
++ box-office: Observe distribution of the box-office to see if impacted significantly by the year
 + genre_: The genre variables are too sparse. We can try doing two 
 
 
 ```{r}
-names(d)
 # dropping columns
-d <- d[, !names(dat) %in% c("director", "release_year", "wikipedia", "rotten_tomato")]
+d <- d[, !names(d) %in% c("director", "wikipedia", "rotten_tomato")]
 names(d)
 ```
 
+```{r}
+# replace "genre" column with genre count for each film
+d$genre <- sapply(d$genre, function(g) length(unlist(strsplit(g, ", "))))
+names(d)[names(d) == "genre"] <- "genre_count"
+```
+
+```{r}
+# extract base rating (e.g. "PG-13", "R", "PG") from full rating string
+d$rating <- gsub(" \\(.*", "", d$rating)
+table(d$rating)
+
+# filling NA value
+d[which(is.na(d$rating)),]
+# Film "Drive My Car" is "not rated", we classify it as R
+d[which(is.na(d$rating)),]$rating <- "R"
+table(d$rating)
+```
+
+```{r}
+# inspect film language distribution
+table(d$language)
+table(d$language, d$best_picture_winner)
+
+library(ggplot2)
+
+ggplot(d, aes(x = language, fill = factor(best_picture_winner))) +
+  geom_bar(position = "dodge") +
+  labs(x = "Language", y = "Count", fill = "Won Best Picture") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# low correlation/pattern -> drop language
+d <- d[, !names(d) %in% c("language")]
+```
+```{r}
+# normalize the box office for the Netflix film (All Quiet on the Western Front (2022))
+d[d$box_office_millions == 2878, ]$box_office_millions = 2878/1000000
+
+names(d)
+# aggregate average box office by year
+box_by_year <- aggregate(box_office_millions ~ release_year, data = d, FUN = mean, na.rm = TRUE)
+
+# plot the average box office by year
+ggplot(box_by_year, aes(x = release_year, y = box_office_millions)) +
+  geom_line() +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE, color = "blue") +
+  labs(x = "Release Year", y = "Average Box Office ($)", title = "Box Office Over Time")
+
+# overal bar chart
+ggplot(d, aes(x = reorder(film, release_year), y = box_office_millions)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Film", y = "Box Office ($)") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 5))
+
+# stacked bar chart for box office by year
+library(plotly)
+p <- ggplot(d, aes(x = factor(release_year), y = box_office_millions, 
+                     fill = reorder(film, box_office_millions),
+                     text = paste("Film:", film, "<br>Box Office: $", box_office_millions))) +
+  geom_bar(stat = "identity") +
+  labs(x = "Year", y = "Box Office ($)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+ggplotly(p, tooltip = "text")
+```
 
 
 
