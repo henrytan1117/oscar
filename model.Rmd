@@ -1,0 +1,234 @@
+---
+title: "model"
+output: html_document
+---
+
+# We create models
+
+# combine golden globe awards (merging drama and comedy)
+```{r}
+dat <- read.csv("academy_final.csv")
+dat$total_nominee_gg <- dat$nominee_drama_gg + dat$nominee_comedy_gg
+dat$total_won_gg <- dat$won_drama_gg + dat$won_comedy_gg
+
+dat$nominee_drama_gg <- NULL
+dat$nominee_comedy_gg <- NULL
+dat$won_drama_gg <- NULL
+dat$won_comedy_gg <- NULL
+```
+
+# categorize and combine genre: too many of them, we eliminate them
+```{r}
+# New genre group:
+# 1. Drama
+# 2. Human Interest (Biography, History, Romance, LGBTQ, War, Music)
+# 3. Suspense (Mystery & Thriller, Crime, Sci-Fi, Fantasy, Adventure)
+# 4. Entertainment (Action, Western, Comedy, Musical)
+# 5. Niche (Animation, Holiday, Horror, Kids & Family, Sports)
+
+# Define which original columns map to each new group
+human_interest <- c("genre_Biography", "genre_History", "genre_Romance", 
+                    "genre_LGBTQ_", "genre_War", "genre_Music")
+
+suspense       <- c("genre_Mystery___Thriller", "genre_Crime", "genre_Sci_Fi", 
+                    "genre_Fantasy", "genre_Adventure")
+
+entertainment  <- c("genre_Action", "genre_Western", "genre_Comedy", "genre_Musical")
+
+niche          <- c("genre_Animation", "genre_Holiday", "genre_Horror", 
+                    "genre_Kids___Family", "genre_Sports")
+
+# Create new binary indicators (1 if ANY of the group's genres apply)
+dat$genre_Drama         <- dat$genre_Drama  # already exists, keep as-is
+dat$genre_HumanInterest <- as.integer(rowSums(dat[, human_interest]) > 0)
+dat$genre_Suspense      <- as.integer(rowSums(dat[, suspense]) > 0)
+dat$genre_Entertainment <- as.integer(rowSums(dat[, entertainment]) > 0)
+dat$genre_Niche         <- as.integer(rowSums(dat[, niche]) > 0)
+
+# Drop all original genre_* columns
+original_genres <- c("genre_Comedy", "genre_History", "genre_Biography",
+                     "genre_Mystery___Thriller", "genre_Romance", "genre_Adventure",
+                     "genre_Action", "genre_Crime", "genre_Fantasy", "genre_Sci_Fi",
+                     "genre_War", "genre_LGBTQ_", "genre_Music", "genre_Musical",
+                     "genre_Western", "genre_Horror", "genre_Kids___Family",
+                     "genre_Animation", "genre_Holiday", "genre_Sports")
+
+dat <- dat[, !names(dat) %in% original_genres]
+str(dat)
+```
+
+# go through the data set, go through and inspect binary predictor that are 95% zeros
+```{r}
+binary_cols <- names(dat)[sapply(dat, function(x) all(x %in% c(0, 1, NA)))]
+
+zero_pct <- sapply(dat[, binary_cols], function(x) mean(x == 0, na.rm = TRUE))
+
+flagged <- sort(zero_pct[zero_pct >= 0.95], decreasing = TRUE)
+flagged
+
+# only genre_Niche, bye bye!
+dat$genre_Niche <- NULL
+```
+
+# drop 
+1. film
+2. director
+3. release year
+4. genre
+5. wikipedia
+6. rotten_tomato
+7. language
+```{r}
+dat$post_2009 <- as.integer(dat$release_year >= 2009)
+
+drop_cols <- c("film", "director", "release_year", "genre", 
+               "wikipedia", "rotten_tomato", "language")
+dat <- dat[, !names(dat) %in% drop_cols]
+dat$post_2009
+```
+# Tidying up rating variables
+```{r}
+# extract base rating (e.g. "PG-13", "R", "PG") from full rating string
+dat$rating <- gsub(" \\(.*", "", dat$rating)
+table(dat$rating)
+
+# filling NA value
+dat[which(is.na(dat$rating)),]
+
+# Film "Drive My Car" is "not rated", we classify it as R
+dat[which(is.na(dat$rating)),]$rating <- "R"
+table(dat$rating)
+```
+
+# start with our best guess model with linear regression
+```{r}
+model.sig <- lm(best_picture_winner ~ total_academy_award_exclude_best_pic + 
+                                   total_academy_nominations + 
+                                   nominee_film_edit + 
+                                   award_film_edit + 
+                                   popcornmeter, 
+            data = dat)
+
+summary(model.sig)
+par(mfrow=c(2,2))
+plot(model.sig)
+```
+
+# linear model appears to be not suitable --> try logistic regression model
+```{r}
+model.sig.logit <- glm(best_picture_winner ~ total_academy_award_exclude_best_pic + 
+                                          total_academy_nominations + 
+                                          nominee_film_edit + 
+                                          award_film_edit + 
+                                          popcornmeter, 
+                   data = dat, 
+                   family = binomial)
+
+summary(model.sig.logit)
+```
+
+```{r}
+library(arm)
+library(car)
+library(ggplot2)
+library(pROC)
+
+# 1. Binned Residual Plot - want ~95% of points within grey bands
+binnedplot(fitted(model.sig.logit), residuals(model.sig.logit, type = "response"),
+           main = "Binned Residual Plot")
+
+# 2. VIF - check multicollinearity, want < 5
+vif(model.sig.logit)
+
+# 3. Linearity of log-odds for continuous predictors
+dat$log_odds <- predict(model.sig.logit, type = "link")
+ggplot(dat, aes(x = popcornmeter, y = log_odds)) + geom_point() + geom_smooth()
+ggplot(dat, aes(x = total_academy_award_exclude_best_pic, y = log_odds)) + geom_point() + geom_smooth()
+ggplot(dat, aes(x = total_academy_nominations, y = log_odds)) + geom_point() + geom_smooth()
+
+# 4. Influential points via Cook's distance
+plot(model.sig.logit, which = 4)
+
+# 5. ROC/AUC - model discrimination, want > 0.8
+roc_curve <- roc(dat$best_picture_winner, fitted(model.sig.logit))
+plot(roc_curve, main = "ROC Curve")
+auc(roc_curve)
+
+```
+# check for individual predictor contribution
+```{r}
+# Individual logistic regression for each non-significant predictor
+
+summary(glm(best_picture_winner ~ total_academy_nominations, data = dat, family = binomial))
+
+summary(glm(best_picture_winner ~ award_film_edit, data = dat, family = binomial))
+
+summary(glm(best_picture_winner ~ popcornmeter, data = dat, family = binomial))
+```
+
+```{r}
+# academy nomination + awards
+summary(glm(best_picture_winner ~ total_academy_nominations + total_academy_award_exclude_best_pic, data = dat, family = binomial))
+
+# film editing nomination + awards
+summary(glm(best_picture_winner ~ award_film_edit + nominee_film_edit, data = dat, family = binomial))
+
+# film editing nomination + awards + total_academy_award_exclude_best_pic
+summary(glm(best_picture_winner ~ award_film_edit + nominee_film_edit + total_academy_award_exclude_best_pic, data = dat, family = binomial))
+```
+
+# new base model: 
+# 1. total_academy_award_exclude_best_pic
+# 2. nominee_film_edit
+```{r}
+summary(glm(best_picture_winner ~ nominee_film_edit + total_academy_award_exclude_best_pic, data = dat, family = binomial))
+```
+# add in secondary significance variables
+```{r}
+# secondary model: base + genre + golden globe variables
+summary(glm(best_picture_winner ~ nominee_film_edit + 
+                                   total_academy_award_exclude_best_pic +
+                                   genre_Drama +
+                                   genre_HumanInterest +
+                                   genre_Suspense +
+                                   genre_Entertainment +
+                                   total_nominee_gg +
+                                   total_won_gg, 
+            data = dat, family = binomial))
+```
+
+# interactions with post_2009
+```{r}
+summary(glm(best_picture_winner ~ nominee_film_edit + 
+                                   total_academy_award_exclude_best_pic +
+                                   genre_Drama +
+                                   genre_HumanInterest +
+                                   genre_Suspense +
+                                   genre_Entertainment +
+                                   genre_Drama * post_2009 +
+                                   genre_HumanInterest * post_2009 +
+                                   genre_Suspense * post_2009 +
+                                   genre_Entertainment * post_2009, 
+            data = dat, family = binomial))
+
+summary(glm(best_picture_winner ~ total_academy_award_exclude_best_pic + total_academy_award_exclude_best_pic * post_2009, data = dat, family = binomial))
+
+
+summary(glm(best_picture_winner ~ nominee_film_edit + nominee_film_edit * post_2009, data = dat, family = binomial))
+```
+
+
+```{r}
+
+table(dat$nominee_film_edit, dat$post_2009, dat$best_picture_winner)
+```
+
+
+
+
+
+
+
+
+
+
