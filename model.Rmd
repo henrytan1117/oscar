@@ -329,8 +329,82 @@ summary(glm(best_picture_winner ~ total_academy_award_exclude_best_pic +
                                    rating, 
             data = dat_rating, family = binomial))
 ```
+```{r}
+summary(glm(best_picture_winner ~ nominee_film_edit + total_academy_award_exclude_best_pic + budget_norm ,data = dat, family = binomial))
+
+summary(glm(best_picture_winner ~ budget_norm,
+            data = dat_rating, family = binomial))
+```
 
 
+### ELASTIC NET!!!!
+### ELASTIC NET!!!!
+### ELASTIC NET!!!!
+```{r}
+library(glmnet)
 
+# prepare matrix - exclude outcome and log_odds
+X <- model.matrix(best_picture_winner ~ . - log_odds, data = dat)[, -1]
+y <- dat$best_picture_winner
 
+# elastic net with cross-validation (alpha = 0.5 for elastic net)
+set.seed(42)
+cv_fit <- cv.glmnet(X, y, family = "binomial", alpha = 0.5)
 
+# plot cross-validated error
+plot(cv_fit)
+
+# best lambda
+cv_fit$lambda.min
+cv_fit$lambda.1se
+
+# coefficients at lambda.min (less sparse) and lambda.1se (more sparse)
+cat("--- lambda.min coefficients ---\n")
+coef(cv_fit, s = "lambda.min")
+
+cat("--- lambda.1se coefficients ---\n")
+coef(cv_fit, s = "lambda.1se")
+```
+
+# single var models
+```{r}
+# single variable logistic regression for all predictors
+base_vars <- c("best_picture_winner", "log_odds")
+test_vars <- setdiff(names(dat), base_vars)
+
+single_results <- data.frame(variable = character(), p_value = numeric())
+
+for (var in test_vars) {
+  formula <- as.formula(paste("best_picture_winner ~", var))
+  
+  tryCatch({
+    model <- glm(formula, data = dat, family = binomial)
+    p <- summary(model)$coefficients[var, "Pr(>|z|)"]
+    single_results <- rbind(single_results, 
+                            data.frame(variable = var, p_value = round(p, 4)))
+  }, error = function(e) {
+    single_results <<- rbind(single_results, 
+                             data.frame(variable = var, p_value = NA))
+  })
+}
+
+single_results <- single_results[order(single_results$p_value), ]
+print(single_results)
+
+```
+
+# Some interactions!
+```{r}
+# most promising two to start with
+summary(glm(best_picture_winner ~ nominee_film_edit + 
+                                   total_academy_award_exclude_best_pic +
+                                   budget_norm +
+                                   budget_norm * post_2009, 
+            data = dat, family = binomial))
+
+summary(glm(best_picture_winner ~ nominee_film_edit * 
+                                   total_academy_award_exclude_best_pic +
+                                   budget_norm, 
+            data = dat, family = binomial))
+
+```
