@@ -56,7 +56,21 @@ original_genres <- c("genre_Comedy", "genre_History", "genre_Biography",
 dat <- dat[, !names(dat) %in% original_genres]
 str(dat)
 ```
+# normalize budget and box office
+```{r}
+library(dplyr)
+# normalize box office and budget by year (run before dropping release_year)
+dat <- dat %>%
+  group_by(release_year) %>%
+  mutate(
+    box_office_norm = box_office_millions / sum(box_office_millions, na.rm = TRUE),
+    budget_norm = budget_millions / sum(budget_millions, na.rm = TRUE)
+  ) %>%
+  ungroup()
 
+dat$box_office_millions <- NULL
+dat$budget_millions <- NULL
+```
 # go through the data set, go through and inspect binary predictor that are 95% zeros
 ```{r}
 binary_cols <- names(dat)[sapply(dat, function(x) all(x %in% c(0, 1, NA)))]
@@ -91,12 +105,15 @@ dat$post_2009
 # extract base rating (e.g. "PG-13", "R", "PG") from full rating string
 dat$rating <- gsub(" \\(.*", "", dat$rating)
 table(dat$rating)
-
 # filling NA value
 dat[which(is.na(dat$rating)),]
-
 # Film "Drive My Car" is "not rated", we classify it as R
 dat[which(is.na(dat$rating)),]$rating <- "R"
+table(dat$rating)
+
+# collapse G and PG into one category to avoid separation issues (only 1 G film)
+dat$rating <- ifelse(dat$rating %in% c("G", "PG"), "PG_under", dat$rating)
+dat$rating <- factor(dat$rating, levels = c("PG_under", "PG-13", "R"))
 table(dat$rating)
 ```
 
@@ -223,10 +240,95 @@ summary(glm(best_picture_winner ~ nominee_film_edit + nominee_film_edit * post_2
 table(dat$nominee_film_edit, dat$post_2009, dat$best_picture_winner)
 ```
 
+# NOW we are adding blue varianbles 
+```{r}
+# factor rating first since it's a character variable
+dat$rating <- factor(dat$rating)
+
+# extended model: base + all low importance predictors
+summary(glm(best_picture_winner ~ nominee_film_edit + 
+                                   total_academy_award_exclude_best_pic +
+                                   best_director_award_now +
+                                   box_office_norm +
+                                   tomatometer +
+                                   rating +
+                                   best_director_nominee_before +  # director history
+                                   budget_norm +
+                                   running_time_minutes +
+                                   characters +                     # title name length
+                                   words, 
+            data = dat, family = binomial))
+table(dat$rating, dat$best_picture_winner)
+```
+# oscar doesn't like children: removed rating
+
+```{r}
+# factor rating first since it's a character variable
+dat$rating <- factor(dat$rating)
+
+# extended model: base + all low importance predictors
+summary(glm(best_picture_winner ~ nominee_film_edit + 
+                                   total_academy_award_exclude_best_pic +
+                                   best_director_award_now +
+                                   box_office_norm +
+                                   tomatometer +
+                                   best_director_nominee_before +  # director history
+                                    best_director_nominee_include_now +
+                                   budget_norm +
+                                   running_time_minutes +
+                                   characters +                     # title name length
+                                   words, 
+            data = dat, family = binomial))
+```
 
 
+```{r}
+# base model predictors to exclude from testing
+base_vars <- c("best_picture_winner", "nominee_film_edit", 
+               "total_academy_award_exclude_best_pic", "log_odds")
 
+# all other variables to test
+test_vars <- setdiff(names(dat), base_vars)
 
+# store results
+results <- data.frame(variable = character(), p_value = numeric())
+
+for (var in test_vars) {
+  formula <- as.formula(paste("best_picture_winner ~ total_academy_award_exclude_best_pic + 
+                               nominee_film_edit +", var))
+  
+  tryCatch({
+    model <- glm(formula, data = dat, family = binomial)
+    p <- summary(model)$coefficients[var, "Pr(>|z|)"]
+    results <- rbind(results, data.frame(variable = var, p_value = round(p, 4)))
+  }, error = function(e) {
+    results <<- rbind(results, data.frame(variable = var, p_value = NA))
+  })
+}
+
+# sort by p-value
+results <- results[order(results$p_value), ]
+print(results)
+```
+
+# that is so weird
+```{r}
+summary(glm(best_picture_winner ~ nominee_film_edit + total_academy_award_exclude_best_pic + budget_norm ,data = dat, family = binomial))
+
+summary(glm(best_picture_winner ~ nominee_film_edit + total_academy_award_exclude_best_pic + budget_norm + genre_Drama ,data = dat, family = binomial))
+```
+
+```{r}
+# 1. remove PG_under films since no winners exist in that group
+dat_rating <- dat[dat$rating != "PG_under", ]
+dat_rating$rating <- factor(dat_rating$rating, levels = c("PG-13", "R"))
+
+# 2. base model + rating on filtered data
+summary(glm(best_picture_winner ~ total_academy_award_exclude_best_pic + 
+                                   nominee_film_edit +
+                                   rating, 
+            data = dat_rating, family = binomial))
+```
 
 
 
