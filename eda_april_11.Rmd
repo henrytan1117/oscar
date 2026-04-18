@@ -794,6 +794,64 @@ ggplot(d, aes(x = budget_norm, fill = factor(best_picture_winner))) +
   labs(title = "Distribution of Normalized Budget (By Year)", x = "Total Academy Wins Exclude Best Pics", fill = "Winner") +
   theme_minimal()
 ```
+```{r}
+# Create a bar chart with error bar
+
+# 1. Calculate the mean and 95% Confidence Interval
+summary_stats <- d %>%
+  group_by(best_picture_winner) %>%
+  summarise(
+    mean_budget = mean(budget_norm, na.rm = TRUE),
+    sd_budget = sd(budget_norm, na.rm = TRUE),
+    n = n(),
+    se = sd_budget / sqrt(n),
+    # 95% CI = mean +/- 1.96 * SE
+    lower_ci = mean_budget - (1.96 * se),
+    upper_ci = mean_budget + (1.96 * se)
+  )
+
+# 2. Plot the bar chart
+ggplot(summary_stats, aes(x = factor(best_picture_winner), y = mean_budget, fill = factor(best_picture_winner))) +
+  geom_bar(stat = "identity", width = 0.7, alpha = 0.8) +
+  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.2, color = "black") +
+  labs(
+    title = "Average Normalized Budget: Winners vs. Non-Winners",
+    x = "Best Picture Winner",
+    y = "Mean Normalized Budget",
+    fill = "Winner"
+  ) +
+  theme_minimal() +
+  scale_x_discrete(labels = c("0" = "Non-Winner", "1" = "Winner"))
+
+```
+```{r}
+# Let's look at the normalized budget of the winning film
+# 1. Filter your data for winners only
+winners <- d %>% 
+  filter(best_picture_winner == 1)
+
+# 2. Create the line plot with the corrected label
+ggplot(winners, aes(x = release_year, y = budget_norm)) +
+  # Add the line and points
+  geom_line(color = "#b89b4f", alpha = 0.6) + 
+  geom_point(color = "#b89b4f", size = 3) +
+  
+  # CORRECTED: Use 'film' instead of 'title'
+  geom_text_repel(aes(label = film), 
+                  size = 3, 
+                  box.padding = 0.5, 
+                  max.overlaps = Inf) +
+  
+  # Formatting
+  labs(
+    title = "Normalized Budget Share of Best Picture Winners",
+    x = "Year",
+    y = "Normalized Budget Share",
+    caption = "Data: Best Picture Winners 2000-2025"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent)
+```
 
 ```{r}
 # Normalized Surplus
