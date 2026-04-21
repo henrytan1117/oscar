@@ -1,11 +1,11 @@
 ---
-title: "model"
+title: "Statistical Model"
 output: html_document
 ---
 
-# We create models
+# Feature Engineering
 
-# combine golden globe awards (merging drama and comedy)
+## 1. Combine golden globe awards (merging drama and comedy)
 ```{r}
 dat <- read.csv("academy_final.csv")
 dat$total_nominee_gg <- dat$nominee_drama_gg + dat$nominee_comedy_gg
@@ -17,7 +17,7 @@ dat$won_drama_gg <- NULL
 dat$won_comedy_gg <- NULL
 ```
 
-# categorize and combine genre: too many of them, we eliminate them
+## 2. Categorize and combine genre: too many of them, we eliminate them
 ```{r}
 # New genre group:
 # 1. Drama
@@ -56,7 +56,14 @@ original_genres <- c("genre_Comedy", "genre_History", "genre_Biography",
 dat <- dat[, !names(dat) %in% original_genres]
 str(dat)
 ```
-# normalize budget and box office
+```{r}
+sum(dat$genre_Drama)
+sum(dat$genre_HumanInterest)
+sum(dat$genre_Suspense)
+sum(dat$genre_Entertainment)
+sum(dat$genre_Niche)
+```
+## 3. Normalize budget and box office
 ```{r}
 library(dplyr)
 # normalize box office and budget by year (run before dropping release_year)
@@ -71,36 +78,8 @@ dat <- dat %>%
 dat$box_office_millions <- NULL
 dat$budget_millions <- NULL
 ```
-# go through the data set, go through and inspect binary predictor that are 95% zeros
-```{r}
-binary_cols <- names(dat)[sapply(dat, function(x) all(x %in% c(0, 1, NA)))]
 
-zero_pct <- sapply(dat[, binary_cols], function(x) mean(x == 0, na.rm = TRUE))
-
-flagged <- sort(zero_pct[zero_pct >= 0.95], decreasing = TRUE)
-flagged
-
-# only genre_Niche, bye bye!
-dat$genre_Niche <- NULL
-```
-
-# drop 
-1. film
-2. director
-3. release year
-4. genre
-5. wikipedia
-6. rotten_tomato
-7. language
-```{r}
-dat$post_2009 <- as.integer(dat$release_year >= 2009)
-
-drop_cols <- c("film", "director", "release_year", "genre", 
-               "wikipedia", "rotten_tomato", "language")
-dat <- dat[, !names(dat) %in% drop_cols]
-dat$post_2009
-```
-# Tidying up rating variables
+## 4. Tidying up rating variables
 ```{r}
 # extract base rating (e.g. "PG-13", "R", "PG") from full rating string
 dat$rating <- gsub(" \\(.*", "", dat$rating)
@@ -117,21 +96,61 @@ dat$rating <- factor(dat$rating, levels = c("PG_under", "PG-13", "R"))
 table(dat$rating)
 ```
 
-# start with our best guess model with linear regression
+## 5. Go through the data set, go through and inspect binary predictor that are 95% zeros
+```{r}
+binary_cols <- names(dat)[sapply(dat, function(x) all(x %in% c(0, 1, NA)))]
+
+zero_pct <- sapply(dat[, binary_cols], function(x) mean(x == 0, na.rm = TRUE))
+
+flagged <- sort(zero_pct[zero_pct >= 0.95], decreasing = TRUE)
+flagged
+
+# only genre_Niche, bye bye!
+dat$genre_Niche <- NULL
+```
+
+## 6. Dropping unnecessary/extra variables before model fitting 
+1. film
+2. director
+3. release year
+4. genre
+5. wikipedia
+6. rotten_tomato
+7. language
+
+## 7. Creating extra variable called 2009 to examine the effect of major Oscar change
+
+```{r}
+dat$post_2009 <- as.integer(dat$release_year >= 2009)
+
+drop_cols <- c("film", "director", "release_year", "genre", 
+               "wikipedia", "rotten_tomato", "language")
+dat <- dat[, !names(dat) %in% drop_cols]
+dat$post_2009
+```
+
+## 8. Inspecting the dataset now
+```{r}
+dat <- data.frame(dat)
+str(dat)
+```
+
+# Model Fitting
+
+## 1. Start with our best guess model with linear regression
 ```{r}
 model.sig <- lm(best_picture_winner ~ total_academy_award_exclude_best_pic + 
                                    total_academy_nominations + 
                                    nominee_film_edit + 
                                    award_film_edit + 
-                                   popcornmeter, 
-            data = dat)
+                                   popcornmeter, data = dat)
 
-summary(model.sig)
 par(mfrow=c(2,2))
 plot(model.sig)
 ```
 
-# linear model appears to be not suitable --> try logistic regression model
+## 2. Clear violation of linear regression assumptions, switch to logistic regression
+
 ```{r}
 model.sig.logit <- glm(best_picture_winner ~ total_academy_award_exclude_best_pic + 
                                           total_academy_nominations + 
@@ -142,37 +161,31 @@ model.sig.logit <- glm(best_picture_winner ~ total_academy_award_exclude_best_pi
                    family = binomial)
 
 summary(model.sig.logit)
-```
-
-```{r}
-library(arm)
-library(car)
-library(ggplot2)
-library(pROC)
-
-# 1. Binned Residual Plot - want ~95% of points within grey bands
-binnedplot(fitted(model.sig.logit), residuals(model.sig.logit, type = "response"),
-           main = "Binned Residual Plot")
-
-# 2. VIF - check multicollinearity, want < 5
 vif(model.sig.logit)
-
-# 3. Linearity of log-odds for continuous predictors
-dat$log_odds <- predict(model.sig.logit, type = "link")
-ggplot(dat, aes(x = popcornmeter, y = log_odds)) + geom_point() + geom_smooth()
-ggplot(dat, aes(x = total_academy_award_exclude_best_pic, y = log_odds)) + geom_point() + geom_smooth()
-ggplot(dat, aes(x = total_academy_nominations, y = log_odds)) + geom_point() + geom_smooth()
-
-# 4. Influential points via Cook's distance
-plot(model.sig.logit, which = 4)
-
-# 5. ROC/AUC - model discrimination, want > 0.8
-roc_curve <- roc(dat$best_picture_winner, fitted(model.sig.logit))
-plot(roc_curve, main = "ROC Curve")
-auc(roc_curve)
-
 ```
-# check for individual predictor contribution
+
+## This checks if the model is performing good in residuals/any multicollinear - pretty good
+```{r}
+# Install if you haven't yet
+# install.packages("performance")
+# install.packages("see") 
+
+library(performance)
+library(see) # Makes the plots look professional
+
+check_model(model.sig.logit)
+```
+
+## This checks if the continuous variables are linear with respect to log_odds
+If the continuous variables are linear with respect to log_odds, the residuals should be distributed evenly across different values, and the indicator line should appear flat. We fulfill the assumption check. 
+```{r}
+library(car)
+residualPlots(model.sig.logit)
+```
+
+## Check for individual predictor contribution
+We suspect the total_academy_nominations and award_film_edit are important too, and their information might be masked by the other variables included.
+
 ```{r}
 # Individual logistic regression for each non-significant predictor
 
@@ -193,218 +206,406 @@ summary(glm(best_picture_winner ~ award_film_edit + nominee_film_edit, data = da
 # film editing nomination + awards + total_academy_award_exclude_best_pic
 summary(glm(best_picture_winner ~ award_film_edit + nominee_film_edit + total_academy_award_exclude_best_pic, data = dat, family = binomial))
 ```
+At this stage, we know that the total academy awards won and nominated for best editing film did increase the probability of winning the Oscar's award (significant effect). Let's try adding another set of variables (the group of variables which we think might not be that significant). 
 
-# new base model: 
-# 1. total_academy_award_exclude_best_pic
-# 2. nominee_film_edit
-```{r}
-summary(glm(best_picture_winner ~ nominee_film_edit + total_academy_award_exclude_best_pic, data = dat, family = binomial))
-```
-# add in secondary significance variables
+# Add in second group of significance variables
 ```{r}
 # secondary model: base + genre + golden globe variables
-summary(glm(best_picture_winner ~ nominee_film_edit + 
+second.model <- glm(best_picture_winner ~  nominee_film_edit +
+                                   total_academy_nominations + 
+                                   award_film_edit + 
+                                   popcornmeter +
                                    total_academy_award_exclude_best_pic +
                                    genre_Drama +
                                    genre_HumanInterest +
                                    genre_Suspense +
                                    genre_Entertainment +
                                    total_nominee_gg +
-                                   total_won_gg, 
-            data = dat, family = binomial))
-```
+                                   total_won_gg, data = dat, family = binomial)
 
-# interactions with post_2009
-```{r}
-summary(glm(best_picture_winner ~ nominee_film_edit + 
-                                   total_academy_award_exclude_best_pic +
-                                   genre_Drama +
-                                   genre_HumanInterest +
-                                   genre_Suspense +
-                                   genre_Entertainment +
-                                   genre_Drama * post_2009 +
-                                   genre_HumanInterest * post_2009 +
-                                   genre_Suspense * post_2009 +
-                                   genre_Entertainment * post_2009, 
-            data = dat, family = binomial))
-
-summary(glm(best_picture_winner ~ total_academy_award_exclude_best_pic + total_academy_award_exclude_best_pic * post_2009, data = dat, family = binomial))
-
-
-summary(glm(best_picture_winner ~ nominee_film_edit + nominee_film_edit * post_2009, data = dat, family = binomial))
+summary(second.model)
+vif(second.model)
 ```
 
 
 ```{r}
-
-table(dat$nominee_film_edit, dat$post_2009, dat$best_picture_winner)
+# We are trying to see if the addition of extra variables are important
+# We use anova for likelihood ratio test (using chi square)
+anova(model.sig.logit, second.model, test = "Chisq")
 ```
+The result is insignificant, hence adding the additional variables above does not improve the model/add extra information. The coefficient of the extra variables added are statistically insignificant.
 
-# NOW we are adding blue varianbles 
+We can verify with AIC and BIC
 ```{r}
-# factor rating first since it's a character variable
-dat$rating <- factor(dat$rating)
+# Compare AIC for both models
+AIC(model.sig.logit, second.model)
 
-# extended model: base + all low importance predictors
-summary(glm(best_picture_winner ~ nominee_film_edit + 
-                                   total_academy_award_exclude_best_pic +
-                                   best_director_award_now +
-                                   box_office_norm +
-                                   tomatometer +
-                                   rating +
-                                   best_director_nominee_before +  # director history
-                                   budget_norm +
-                                   running_time_minutes +
-                                   characters +                     # title name length
-                                   words, 
-            data = dat, family = binomial))
-table(dat$rating, dat$best_picture_winner)
+# Compare BIC for both models
+BIC(model.sig.logit, second.model)
 ```
-# oscar doesn't like children: removed rating
+# Base group + add in the variables we think are insignificant
 
 ```{r}
-# factor rating first since it's a character variable
-dat$rating <- factor(dat$rating)
+third.model <- glm(best_picture_winner ~ total_academy_award_exclude_best_pic + 
+                                          total_academy_nominations +
+                                          nominee_film_edit + 
+                                          award_film_edit + 
+                                          popcornmeter + 
+                                          box_office_norm +
+                                          tomatometer +
+                                          rating +
+                                          best_director_award_now + 
+                                          best_director_award_before +
+                                          best_director_nominee_include_now +
+                                          best_director_nominee_before +  # director history
+                                          budget_norm +
+                                          running_time_minutes +
+                                          characters +                     # title name length
+                                          words, data = dat, family = binomial)
 
-# extended model: base + all low importance predictors
-summary(glm(best_picture_winner ~ nominee_film_edit + 
-                                   total_academy_award_exclude_best_pic +
-                                   best_director_award_now +
-                                   box_office_norm +
-                                   tomatometer +
-                                   best_director_nominee_before +  # director history
-                                    best_director_nominee_include_now +
-                                   budget_norm +
-                                   running_time_minutes +
-                                   characters +                     # title name length
-                                   words, 
-            data = dat, family = binomial))
+
+vif(third.model)
+```
+There is extreme collinearity between some variables. We suspect it is:
+1. best_director_nominee_include_now & best_director_nominee_before
+2. characters and words
+
+In addition, we realize that in rating, none of the categories under PG 13 win the Oscars. This might cause the perfect separation problem to the model, where film with PG 13 will be immediately predicted to lose the Oscars. We tried excluding rating and the standard error of intercept return to normal and smaller number. 
+
+Let's remove and reconstruct the model
+```{r}
+third.model <- glm(best_picture_winner ~ total_academy_award_exclude_best_pic + 
+                                          total_academy_nominations +
+                                          nominee_film_edit + 
+                                          award_film_edit + 
+                                          popcornmeter + 
+                                          box_office_norm +
+                                          tomatometer +
+                                          best_director_award_now + 
+                                          best_director_award_before +
+                                          best_director_nominee_include_now + # director history
+                                          budget_norm +
+                                          running_time_minutes +
+                                          characters +
+                                          post_2009, data = dat, family = binomial)
+
+
+vif(third.model)
+```
+All VIF is lower than 5, we are good.
+
+```{r}
+summary(third.model)
+vif(third.model)
 ```
 
 
 ```{r}
-# base model predictors to exclude from testing
-base_vars <- c("best_picture_winner", "nominee_film_edit", 
-               "total_academy_award_exclude_best_pic", "log_odds")
-
-# all other variables to test
-test_vars <- setdiff(names(dat), base_vars)
-
-# store results
-results <- data.frame(variable = character(), p_value = numeric())
-
-for (var in test_vars) {
-  formula <- as.formula(paste("best_picture_winner ~ total_academy_award_exclude_best_pic + 
-                               nominee_film_edit +", var))
-  
-  tryCatch({
-    model <- glm(formula, data = dat, family = binomial)
-    p <- summary(model)$coefficients[var, "Pr(>|z|)"]
-    results <- rbind(results, data.frame(variable = var, p_value = round(p, 4)))
-  }, error = function(e) {
-    results <<- rbind(results, data.frame(variable = var, p_value = NA))
-  })
-}
-
-# sort by p-value
-results <- results[order(results$p_value), ]
-print(results)
+# We are trying to see if the addition of extra variables are important
+# We use anova for likelihood ratio test (using chi square)
+anova(model.sig.logit, third.model, test = "Chisq")
 ```
-
-# that is so weird
-```{r}
-summary(glm(best_picture_winner ~ nominee_film_edit + total_academy_award_exclude_best_pic + budget_norm ,data = dat, family = binomial))
-
-summary(glm(best_picture_winner ~ nominee_film_edit + total_academy_award_exclude_best_pic + budget_norm + genre_Drama ,data = dat, family = binomial))
-```
+The addition of these new variables does not seem to contribute to extra information, but the probability is very close to significant 0.05, so I suspect there might be something useful in the extra variables but is masked by other noise.
 
 ```{r}
-# 1. remove PG_under films since no winners exist in that group
-dat_rating <- dat[dat$rating != "PG_under", ]
-dat_rating$rating <- factor(dat_rating$rating, levels = c("PG-13", "R"))
-
-# 2. base model + rating on filtered data
-summary(glm(best_picture_winner ~ total_academy_award_exclude_best_pic + 
-                                   nominee_film_edit +
-                                   rating, 
-            data = dat_rating, family = binomial))
+# Backward stepwise selection with AIC criteria
+# This will automatically find the best combination of variables
+refined_model <- step(third.model, direction = "backward")
+summary(refined_model)
 ```
+
+
 ```{r}
-summary(glm(best_picture_winner ~ nominee_film_edit + total_academy_award_exclude_best_pic + budget_norm ,data = dat, family = binomial))
-
-summary(glm(best_picture_winner ~ budget_norm,
-            data = dat_rating, family = binomial))
+# Interested to see if we will have the same variables being selected using full model
+full.model <- glm(formula = best_picture_winner~.-rating, data=dat, family=binomial)
+refined_model <- step(full.model, direction = "backward")
+summary(refined_model)
 ```
 
 
-### ELASTIC NET!!!!
-### ELASTIC NET!!!!
-### ELASTIC NET!!!!
+# Interaction Term Inspection
+
+## First interaction term: total_academy_nominations * genre_Drama
+Not significant
 ```{r}
-library(glmnet)
+# Now I am interested to test if the addition of interaction term is important
+final.model <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                   nominee_film_edit + best_director_award_before + best_director_award_now + 
+                   total_won_gg + budget_norm, family = binomial, data = dat)
 
-# prepare matrix - exclude outcome and log_odds
-X <- model.matrix(best_picture_winner ~ . - log_odds, data = dat)[, -1]
-y <- dat$best_picture_winner
+# Adding interaction term
+interact.model.1 <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                   nominee_film_edit + best_director_award_before + best_director_award_now + 
+                   total_won_gg + budget_norm + total_academy_nominations*genre_Drama, family = binomial, data = dat)
 
-# elastic net with cross-validation (alpha = 0.5 for elastic net)
-set.seed(42)
-cv_fit <- cv.glmnet(X, y, family = "binomial", alpha = 0.5)
-
-# plot cross-validated error
-plot(cv_fit)
-
-# best lambda
-cv_fit$lambda.min
-cv_fit$lambda.1se
-
-# coefficients at lambda.min (less sparse) and lambda.1se (more sparse)
-cat("--- lambda.min coefficients ---\n")
-coef(cv_fit, s = "lambda.min")
-
-cat("--- lambda.1se coefficients ---\n")
-coef(cv_fit, s = "lambda.1se")
+# Anova
+anova(final.model, interact.model.1, test = "Chisq")
 ```
 
-# single var models
+## Second interaction term: box_office_norm * budget_norm
+Not significant
 ```{r}
-# single variable logistic regression for all predictors
-base_vars <- c("best_picture_winner", "log_odds")
-test_vars <- setdiff(names(dat), base_vars)
+# Now I am interested to test if the addition of interaction term is important
+final.model <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                   nominee_film_edit + best_director_award_before + best_director_award_now + 
+                   total_won_gg + budget_norm, family = binomial, data = dat)
 
-single_results <- data.frame(variable = character(), p_value = numeric())
-
-for (var in test_vars) {
-  formula <- as.formula(paste("best_picture_winner ~", var))
-  
-  tryCatch({
-    model <- glm(formula, data = dat, family = binomial)
-    p <- summary(model)$coefficients[var, "Pr(>|z|)"]
-    single_results <- rbind(single_results, 
-                            data.frame(variable = var, p_value = round(p, 4)))
-  }, error = function(e) {
-    single_results <<- rbind(single_results, 
-                             data.frame(variable = var, p_value = NA))
-  })
-}
-
-single_results <- single_results[order(single_results$p_value), ]
-print(single_results)
-
+vif(final.model)
 ```
 
-# Some interactions!
 ```{r}
-# most promising two to start with
-summary(glm(best_picture_winner ~ nominee_film_edit + 
-                                   total_academy_award_exclude_best_pic +
-                                   budget_norm +
-                                   budget_norm * post_2009, 
-            data = dat, family = binomial))
+# Adding interaction term
+interact.model.2 <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                   nominee_film_edit + best_director_award_before + best_director_award_now + 
+                   total_won_gg + budget_norm + box_office_norm * budget_norm, family = binomial, data = dat)
 
-summary(glm(best_picture_winner ~ nominee_film_edit * 
-                                   total_academy_award_exclude_best_pic +
-                                   budget_norm, 
-            data = dat, family = binomial))
+# Anova
+anova(final.model, interact.model.2, test = "Chisq")
+```
+
+## Third interaction term: total_nominee_gg * total_academy_nominations
+Insignificant
+```{r}
+# Now I am interested to test if the addition of interaction term is important
+final.model <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                   nominee_film_edit + best_director_award_before + best_director_award_now + 
+                   total_won_gg + budget_norm, family = binomial, data = dat)
+
+# Adding interaction term
+interact.model.3 <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                   nominee_film_edit + best_director_award_before + best_director_award_now + 
+                   total_won_gg + budget_norm + total_nominee_gg * total_academy_nominations, family = binomial, data = dat)
+
+# Anova
+anova(final.model, interact.model.3, test = "Chisq")
+```
+
+## Forth interaction term: year_2009 with genres
+None of the genres*year terms are significant
+```{r}
+# Adding interaction term
+interact.model.4 <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                   nominee_film_edit + best_director_award_before + best_director_award_now + 
+                   total_won_gg + budget_norm + genre_Drama * post_2009 + genre_HumanInterest * post_2009 +
+                     genre_Suspense * post_2009 + genre_Entertainment * post_2009, family = binomial, data = dat)
+
+anova(final.model, interact.model.4, test = "Chisq")
+```
+
+## Fifth interaction term: year_2009 with budget_norm
+None of the genres*year terms are significant
+```{r}
+# Adding interaction term
+interact.model.5 <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                   nominee_film_edit + best_director_award_before + best_director_award_now + 
+                   total_won_gg + budget_norm + post_2009*budget_norm, family = binomial, data = dat)
+
+anova(final.model, interact.model.5, test = "Chisq")
+```
+
+
+We hypothesized that the influence of precursor awards and financial performance might be moderated by variables such as genre and budget class (e.g., 'Indie Success' narratives). We tested these interaction effects using Likelihood Ratio Tests. The results were statistically insignificant across all proposed interactions, suggesting that these factors operate additively rather than multiplicatively in predicting Best Picture winners. Consequently, the additive model was retained for its superior parsimony and predictive stability.
+
+
+We do some robustness check for the final model
+
+```{r}
+final.model <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                   nominee_film_edit + best_director_award_before + best_director_award_now + 
+                   total_won_gg + post_2009*budget_norm, family = binomial, data = dat)
+vif(final.model)
+summary(final.model)
+```
+
+
+```{r}
+residualPlots(final.model)
+```
+
+
+\newpage
+
+Now, we can focus on making the model to have good predictive accuracy.
+Our final model has the variable of:
+
+1. popcornmeter
+2. total_academy_award_exclude_best_pic
+3. nominee_film_edit
+4. best_director_award_before
+5. best_director_award_now
+6. total_won_gg
+7. budget_norm
+
+```{r}
+# Calculate Odds Ratios and 95% Confidence Intervals
+# The percentage change in the winning probability for each unit increase in predictor
+or_results <- exp(cbind(OR = coef(final.model), confint(final.model)))
+print(or_results)
+```
+
+
+```{r}
+library(margins)
+me <- margins(final.model)
+summary(me)
+```
+
+
+## Visualizing which predictors are important
+
+The Red Line (Value = 1): This is the null hypothesis. If a coefficient’s bar crosses this line, it is not statistically significant at the p < 0.05 level.
+
+The Bars (Confidence Intervals): If the bar touches the red line, the effect is "statistically indistinguishable from zero."
+
+```{r}
+summary(final.model)
+library(sjPlot)
+
+# This creates a Forest Plot of your final model
+plot_model(final.model, 
+           show.values = TRUE, 
+           value.offset = .3, 
+           sort.est = TRUE, 
+           title = "Predictors of Best Picture Success",
+           axis.title = "Odds Ratio",
+           vline.color = "red")
+```
+## Show that our model has predictive power
+
+```{r}
+library(pROC)
+
+# 1. Get predicted probabilities
+probabilities <- predict(final.model, type = "response")
+
+# 2. Create the ROC object
+roc_obj <- roc(dat$best_picture_winner, probabilities)
+
+# 3. Plot the curve
+plot(roc_obj, main = paste("ROC Curve (AUC =", round(auc(roc_obj), 3), ")"))
+```
+
+## Likely Overfit :(
+```{r}
+# 1. Split the data (80% training, 20% testing)
+set.seed(123)
+train_index <- sample(1:nrow(dat), 0.8 * nrow(dat))
+train_data <- dat[train_index, ]
+test_data  <- dat[-train_index, ]
+
+# 2. Train the model ONLY on the 80%
+test_model <- glm(formula = best_picture_winner ~ popcornmeter + total_academy_award_exclude_best_pic + 
+                  nominee_film_edit + best_director_award_before + best_director_award_now + 
+                  total_won_gg + budget_norm*post_2009, 
+                  family = binomial, data = train_data)
+
+# 3. Predict on the 20% (the "unseen" data)
+test_probs <- predict(test_model, newdata = test_data, type = "response")
+
+# 4. Calculate AUC on the unseen data
+library(pROC)
+test_roc <- roc(test_data$best_picture_winner, test_probs)
+print(paste("Validation AUC:", round(auc(test_roc), 3)))
 
 ```
+
+
+
+## Check the confusion matrix
+```{r}
+# Use a probability threshold of 0.5 (or lower if your data is very imbalanced)
+predicted_class <- ifelse(probabilities > 0.5, 1, 0)
+table(Predicted = predicted_class, Actual = dat$best_picture_winner)
+# Not using 0.5 due to class imbalance (losing has much more than winning)
+```
+
+
+```{r}
+# 1. Find the optimal threshold
+# "best" uses Youden's Index (sensitivity + specificity - 1) by default
+optimal_result <- coords(roc_obj, "best", ret = "threshold")
+optimal_threshold <- optimal_result$threshold
+
+# Print the value so you can see it
+print(paste("The optimal threshold is:", round(optimal_threshold, 4)))
+
+# 2. Apply this new threshold to create a more balanced confusion matrix
+new_predicted_class <- ifelse(probabilities > optimal_threshold, 1, 0)
+
+# 3. View the new confusion matrix
+table(Actual = dat$best_picture_winner, Predicted = new_predicted_class)
+```
+If the predicted probability is >0.1494, will be classified as winning film.
+
+
+## Building random forest to explore non-linear relationship
+Challenge: class imbalance problem, 175 Losers and 26 Winners:
+
+We check the order to assign the correct weightage
+```{r}
+levels(as.factor(dat$best_picture_winner))
+```
+
+```{r}
+library(randomForest)
+
+# Build the forest
+# We set ntree to 500 to stabilize the results
+# importance = TRUE allows us to extract the importance metrics
+
+# 1. Define weights: 
+# The number of losers (0s) vs winners (1s) is roughly 175 to 26.
+# We give the '1' class a weight of ~6.7 to balance the importance (175/26 = 6.7)
+rf.balanced <- randomForest(as.factor(best_picture_winner) ~ ., 
+                            data = dat, 
+                            importance = TRUE, 
+                            ntree = 500, 
+                            mtry = 3,
+                            classwt = c(1, 6.73)) # Adjust based on your actual counts
+
+# 2. Check the new confusion matrix
+print(rf.balanced)
+
+# 3. Re-generate Variable Importance
+varImpPlot(rf.balanced, type = 2)
+```
+
+### Examine the robustness of Random Forest
+Using rf and see the convergence/stability
+
++ If the error rate plot (the black line) flattens out before you hit 500 trees, your model has converged. This confirms you didn't overfit by using too few trees.
++ The "OOB estimate of error rate" is a legitimate estimate of your model's accuracy on unseen data. Report this in your findings.
+
+```{r}
+# Simply print the model object
+print(rf.balanced)
+
+# Plot the error rate over the number of trees
+# Look for where the error rate "flattens out"
+plot(rf.balanced)
+```
+Even though we account for balanced class measures, there is still a high error rate for identifying the winner - 92.3%. 
+Hence we decided to train the model using the same size of winning and losing datapoints.
+
+```{r}
+# Forcing the model to take exactly 26 '0's and 26 '1's for every tree
+# This creates a perfectly balanced view for every single decision tree.
+rf_strata <- randomForest(as.factor(best_picture_winner) ~ ., 
+                          data = dat, 
+                          importance = TRUE, 
+                          ntree = 500, 
+                          mtry = 3,
+                          strata = as.factor(dat$best_picture_winner),
+                          sampsize = c(26, 26)) # Adjust to your minority class size
+
+# Check the confusion matrix again
+print(rf_strata)
+varImpPlot(rf_strata, type = 2)
+```
+
+
+
+
+
+
+

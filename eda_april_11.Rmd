@@ -852,6 +852,26 @@ ggplot(winners, aes(x = release_year, y = budget_norm)) +
   theme_minimal() +
   scale_y_continuous(labels = scales::percent)
 ```
+```{r}
+library(ggplot2)
+
+# Create factor variables for clearer labels
+dat$period <- factor(dat$period, levels = c("Pre-2009", "Post-2009"))
+dat$outcome <- factor(dat$best_picture_winner, labels = c("Loser", "Winner"))
+
+# Generate the plot
+ggplot(dat, aes(x = outcome, y = budget_norm, fill = outcome)) +
+  geom_boxplot(alpha = 0.7) +
+  geom_jitter(width = 0.2, alpha = 0.5) + # Adds individual data points to show density
+  facet_wrap(~period) +
+  theme_minimal() +
+  labs(title = "Normalized Budget by Winner Status: Pre- vs. Post-2009",
+       subtitle = "Visualizing the budget penalty shift after the 2009 preferential voting change",
+       x = "Academy Award Outcome",
+       y = "Normalized Budget") +
+  scale_fill_brewer(palette = "Set1")
+```
+
 
 ```{r}
 # Normalized Surplus
