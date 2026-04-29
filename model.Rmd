@@ -603,9 +603,59 @@ print(rf_strata)
 varImpPlot(rf_strata, type = 2)
 ```
 
+# We tried using LASSO onto the logistics regression, but it shrinks everything down to only left with total_academy_award_exclude_best_pic. 
 
+```{r}
+# 1. Load the library
+library(glmnet)
 
+# 2. Prepare the data
+# We remove the response variable and 'rating' as you did in the full model
+# model.matrix handles categorical variables by creating dummy variables automatically
+x <- model.matrix(best_picture_winner ~ . - rating, data = dat)[, -1] # [, -1] removes the intercept column
+y <- dat$best_picture_winner
 
+# 3. Use Cross-Validation to find the optimal Lambda (penalty strength)
+# family = "binomial" specifies logistic regression
+cv_lasso <- cv.glmnet(x, y, family = "binomial", alpha = 1) 
+
+# 4. Plot the cross-validation results to see the error vs. Log(Lambda)
+plot(cv_lasso)
+
+# 5. Extract the "Best" Lambda
+# lambda.min: value that gives minimum mean cross-validated error
+# lambda.1se: most regularized model such that error is within 1 std err of the minimum
+best_lambda <- cv_lasso$lambda.min 
+
+# 6. View the selected variables (coefficients)
+# Variables with a "." are the ones LASSO has "zeroed out" (deselected)
+coef(cv_lasso, s = best_lambda)
+```
+```{r}
+# Use the formula syntax inside model.matrix to generate the interaction columns
+# This creates columns for: post_2009, budget_norm, and post_2009:budget_norm
+x_interact <- model.matrix(best_picture_winner ~ . - rating + post_2009:budget_norm, data = dat)[, -1]
+y <- dat$best_picture_winner
+
+# Run CV-Lasso as usual
+cv_lasso_interact <- cv.glmnet(x_interact, y, family = "binomial", alpha = 1)
+
+# Check which coefficients (including the interaction) survived
+coef(cv_lasso_interact, s = "lambda.min")
+
+```
+```{r}
+# 1. Identify variables selected by LASSO (e.g., at lambda.min)
+# Let's say LASSO selected: budget_norm, nominee_film_edit, and total_won_gg
+
+# 2. Run a standard GLM using ONLY those variables
+lasso_vars_model <- glm(best_picture_winner ~ budget_norm + nominee_film_edit + total_won_gg, 
+                        data = dat, family = binomial)
+
+# 3. Check the AIC
+AIC(lasso_vars_model)
+
+```
 
 
 
