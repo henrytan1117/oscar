@@ -1,3 +1,7 @@
+
+### This file contains code that navigate to wikipedia link
+### Extract information from film wikipedia page like running time, budget, box office, directors
+
 library(stringr)
 
 df <- read.csv("wiki-link.csv")

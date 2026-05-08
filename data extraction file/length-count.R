@@ -1,3 +1,6 @@
+
+### This file contains code that calculate word and character count for each film.
+
 academy1 <- read.csv("academy_final.csv")
 academy2 <- academy1[,1]
 head(academy2)

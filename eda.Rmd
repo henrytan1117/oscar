@@ -1,0 +1,1083 @@
+---
+title: "EDA"
+output: pdf_document
+---
+
+# This file contains codes that produce all EDA related visuals in this project. 
+
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, 
+                      error = TRUE, 
+                      tidy.opts=list(width.cutoff=80), 
+                      tidy  = TRUE,
+                      eval = TRUE, collapse = TRUE, comment = NA)
+
+
+# Load all necessary library
+library(ggplot2)
+library(plotly)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(ggcorrplot)
+library(tidyverse)
+library(factoextra) 
+library(ggrepel)
+```
+
+# Dataset Inspection
+
+```{r}
+d <- read.csv("academy_final.csv")
+str(d)
+```
+# Data Processing
+
+Based on the rough structure above, we have the following steps
+
+(1) Dropping not useful variables. This include
+
+-   release_year
+-   director
+-   wikipedia
+-   rotten_tomato
+
+(2) In addition, we should organize the following variables
+
+-   genres: Counting the number of genres using the variable, and then drop it
+-   rating: Organize them to be only PG13, R and G (There is a NA value)
+-   language: We should inspect the type of languages of the movies by category, drop it if most of them are English
+-   box-office: Observe distribution of the box-office to see if impacted significantly by the year
+-   genre\_: The genre variables are too sparse. We can try doing two
+
+```{r}
+# dropping columns
+d <- d[, !names(d) %in% c("director", "wikipedia", "rotten_tomato")]
+names(d)
+```
+
+## Creating genre count variables
+```{r}
+# replace "genre" column with genre count for each film
+d$genre <- sapply(d$genre, function(g) length(unlist(strsplit(g, ", "))))
+names(d)[names(d) == "genre"] <- "genre_count"
+```
+
+
+## Tidying up rating variables
+```{r}
+# extract base rating (e.g. "PG-13", "R", "PG") from full rating string
+d$rating <- gsub(" \\(.*", "", d$rating)
+table(d$rating)
+
+# filling NA value
+d[which(is.na(d$rating)),]
+
+# Film "Drive My Car" is "not rated", we classify it as R
+d[which(is.na(d$rating)),]$rating <- "R"
+table(d$rating)
+```
+
+
+## Inspecting film language distribution - decide to drop the variables
+```{r}
+# inspect film language distribution
+table(d$language)
+table(d$language, d$best_picture_winner)
+```
+# EDA Starts Here
+
+## Language
+
+```{r}
+# ensure the variable is a factor with both levels explicitly defined
+d$best_picture_winner <- factor(d$best_picture_winner, levels = c("0", "1"))
+
+# plot with position_dodge and scale_x_discrete(drop = FALSE)
+ggplot(d, aes(x = language, fill = best_picture_winner)) +
+  geom_bar(position = position_dodge(preserve = "single")) + 
+  scale_fill_discrete(drop = FALSE) + # Prevents '1' from taking '0's spot
+  labs(x = "Language", y = "Count", fill = "Won Best Picture") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# low correlation/pattern -> drop language
+d <- d[, !names(d) %in% c("language")]
+```
+
+
+## Inspecting box office
+
+```{r}
+# normalize the box office for the Netflix film (All Quiet on the Western Front (2022))
+d[d$box_office_millions == 2878, ]$box_office_millions = 2878/1000000
+
+plot_box_office <- function(df, box_col = "box_office_millions") {
+  
+  # aggregate average box office by year
+  box_by_year <- aggregate(df[[box_col]] ~ df$release_year, data = df, FUN = mean, na.rm = TRUE)
+  colnames(box_by_year) <- c("release_year", box_col)
+  
+  # trend line
+  print(
+    ggplot(box_by_year, aes(x = release_year, y = .data[[box_col]])) +
+      geom_line() + geom_point() + 
+      geom_smooth(method = "lm", se = TRUE, color = "blue") + # linear regression to plot the graph
+      labs(x = "Release Year", y = "Average Box Office", title = "Box Office Over Time")
+  )
+  
+  # overall bar chart ordered by year
+  print(
+    ggplot(df, aes(x = reorder(film, release_year), y = .data[[box_col]])) +
+      geom_bar(stat = "identity") +
+      labs(x = "Film", y = "Box Office") +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 5))
+  )
+  
+  # interactive stacked bar chart
+  p <- ggplot(df, aes(x = factor(release_year), y = .data[[box_col]],
+                      fill = reorder(film, .data[[box_col]]),
+                      text = paste("Film:", film, "<br>Box Office:", .data[[box_col]]))) +
+    geom_bar(stat = "identity") +
+    labs(x = "Year", y = "Box Office") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
+  
+  print(ggplotly(p, tooltip = "text"))
+}
+
+# call with raw
+plot_box_office(d)
+```
+
+
+###  Normalizing box office to adjust for inflation and year-related factors
+
+```{r}
+# normalize the box office by year~~~
+d <- d %>%
+  group_by(release_year) %>%
+  mutate(box_office_norm = box_office_millions / sum(box_office_millions, na.rm = TRUE)) %>%
+  ungroup()
+
+# call with normalized
+plot_box_office(d, box_col = "box_office_norm")
+```
+### Distribution of box office of winning film in each year
+```{r}
+# 1. Filter for winners only and ensure data is sorted by year
+winner_data <- d %>%
+  filter(best_picture_winner == 1) %>%
+  arrange(release_year)
+
+# 2. Plot the normalized box office over time
+ggplot(winner_data, aes(x = release_year, y = box_office_norm)) +
+  geom_line(color = "gold3", size = 1, alpha = 0.5) +  # Connection line to show trend
+  geom_point(color = "gold4", size = 3) +             # Points for each winner
+  geom_text_repel(aes(label = film), size = 3) + # Label films
+  scale_y_continuous(labels = percent, limits = c(0, max(winner_data$box_office_norm) * 1.2)) +
+  labs(
+    title = "Commercial Performance of Best Picture Winners (2000-2025)",
+    subtitle = "Y-axis represents the film's share of the total box office for all nominees that year",
+    x = "Year",
+    y = "Normalized Box Office Share"
+  ) +
+  theme_minimal()
+```
+
+
+### The relationship between box office and the winning rate
+
+```{r}
+ggplot(d %>% filter(!is.na(box_office_norm)), 
+       aes(x = box_office_norm, fill = factor(best_picture_winner), color = factor(best_picture_winner))) +
+  # Using position = "identity" and alpha makes overlapping areas visible
+  geom_histogram(aes(y = ..density..), bins = 30, position = "identity", alpha = 0.4) +
+  geom_density(size = 1, alpha = 0) + 
+  scale_fill_manual(values = c("gray70", "gold3"), labels = c("Non-Winner", "Winner")) +
+  scale_color_manual(values = c("gray50", "gold4"), labels = c("Non-Winner", "Winner")) +
+  labs(
+    title = "Distribution of Box Office: Winners vs. Non-Winners",
+    x = "Normalized Box Office",
+    y = "Density",
+    fill = "Result",
+    color = "Result"
+  ) +
+  theme_minimal()
+```
+
+Our normalized box office is right skewed - hence we should switch to using bootstraping to compute confidence interval because it does not put assumptions on our underlying distribution.
+
+
+```{r}
+# Bootstraping method to compute the confidence interval
+# install.packages("Hmisc")
+
+ggplot(d %>% filter(!is.na(box_office_norm)), 
+       aes(x = factor(best_picture_winner), y = box_office_norm, fill = factor(best_picture_winner))) +
+  # Use stat_summary to calculate the mean for the bars
+  stat_summary(fun = mean, geom = "col", width = 0.6, alpha = 0.8) +
+  # Use mean_cl_boot to calculate the bootstrapped 95% CI
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = 0.2, color = "darkred") +
+  scale_x_discrete(labels = c("0" = "Non-Winner", "1" = "Winner")) +
+  scale_fill_manual(values = c("gray70", "gold3")) +
+  labs(
+    title = "Average Normalized Box Office by Winner Status",
+    subtitle = "Error bars represent 95% Bootstrapped Confidence Intervals",
+    x = "Award Outcome",
+    y = "Average Normalized Box Office"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+
+### Plotting normalized box office by genres
+
+```{r}
+# histograms for genres
+
+# grab all genre indicator columns
+genre_cols <- names(d)[grepl("^genre_", names(d)) & names(d) != "genre_count"]
+
+# pivot to long format for easy plotting
+genre_long <- d %>%
+  select(film, best_picture_winner, all_of(genre_cols)) %>%
+  pivot_longer(cols = all_of(genre_cols), names_to = "genre", values_to = "has_genre") %>%
+  filter(has_genre == 1) %>%
+  mutate(genre = gsub("genre_", "", genre),   # clean up prefix
+         genre = gsub("_", " ", genre))        # underscores -> spaces
+
+# simple genre frequency histogram
+ggplot(genre_long, aes(x = reorder(genre, -table(genre)[genre]))) +
+  geom_bar() +
+  labs(x = "Genre", y = "Count", title = "Genre Distribution") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# genre histogram stacked by winner status
+ggplot(genre_long, aes(x = reorder(genre, -table(genre)[genre]), 
+                       fill = factor(best_picture_winner))) +
+  geom_bar(position = "stack") +
+  labs(x = "Genre", y = "Count", fill = "Won Best Picture", 
+       title = "Genre Distribution by Winner Status") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# percentage of winner within genre
+ggplot(genre_long, aes(x = reorder(genre, -table(genre)[genre]), 
+                       fill = factor(best_picture_winner))) +
+  geom_bar(position = "fill") +
+  labs(x = "Genre", y = "Proportion", fill = "Won Best Picture", 
+       title = "Win Rate by Genre") +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# calculate win rate per genre to use for ordering
+win_rate <- genre_long %>%
+  group_by(genre) %>%
+  summarise(win_rate = mean(best_picture_winner == 1)) %>%
+  arrange(desc(win_rate))
+
+ggplot(genre_long, aes(x = reorder(genre, -win_rate$win_rate[match(genre, win_rate$genre)]), 
+                       fill = factor(best_picture_winner))) +
+  geom_bar(position = "fill") +
+  labs(x = "Genre", y = "Proportion", fill = "Won Best Picture", 
+       title = "Win Rate by Genre") +
+  scale_y_continuous(labels = scales::percent) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+# 1. Calculate stats per genre using Wilson Score Interval
+genre_stats <- genre_long %>%
+  group_by(genre) %>%
+  summarise(
+    win_rate = mean(best_picture_winner == 1, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # Set z for 95% confidence
+    z = 1.96,
+    
+    # Wilson Score Interval components
+    denominator = 1 + (z^2 / n),
+    center_adj  = win_rate + (z^2 / (2 * n)),
+    error_term  = z * sqrt((win_rate * (1 - win_rate) / n) + (z^2 / (4 * n^2))),
+    
+    # Final lower and upper bounds
+    lower = (center_adj - error_term) / denominator,
+    upper = (center_adj + error_term) / denominator
+  )
+
+# 2. Plot with Error Bars (Rest of your ggplot code remains the same)
+ggplot(genre_stats, aes(x = reorder(genre, -win_rate), y = win_rate, fill = win_rate)) +
+  geom_col(alpha = 0.8) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, color = "darkred") +
+  scale_y_continuous(labels = percent) +
+  scale_fill_gradient(low = "steelblue1", high = "steelblue4") +
+  labs(
+    title = "Best Picture Win Rate by Genre",
+    subtitle = "Red bars indicate 95% Wilson Score Confidence Intervals",
+    x = "Genre",
+    y = "Win Rate (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+
+
+```
+
+
+
+## Inspecting genre count variable
+```{r}
+# genre count and winning rate distribution
+table(d$genre_count)
+
+table(d[d$best_picture_winner == 1, ]$genre_count)
+```
+
+```{r}
+cor(as.numeric(d$best_picture_winner), d$genre_count)
+
+```
+
+```{r}
+d %>%
+  group_by(genre_count) %>%
+  summarise(
+    win_rate = mean(best_picture_winner == 1, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # Set z for 95% confidence
+    z = 1.96,
+    
+    # Wilson Score Interval components
+    denominator = 1 + (z^2 / n),
+    center_adj  = win_rate + (z^2 / (2 * n)),
+    error_term  = z * sqrt((win_rate * (1 - win_rate) / n) + (z^2 / (4 * n^2))),
+    
+    # Final Wilson bounds
+    lower = (center_adj - error_term) / denominator,
+    upper = (center_adj + error_term) / denominator
+  ) %>%
+  ggplot(aes(x = factor(genre_count), y = win_rate)) +
+  geom_bar(stat = "identity", fill = "steelblue", alpha = 0.8) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, color = "darkred") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    x = "Number of Genres", 
+    y = "Win Rate", 
+    title = "Best Picture Win Rate by Genre Count",
+    subtitle = "Red bars indicate 95% Wilson Score Confidence Intervals"
+  ) +
+  theme_minimal()
+```
+
+# Correlation Map
+
+```{r}
+# 1. Filter for numeric variables AND exclude all genres
+# This keeps the 'clean' numerical/award variables
+numeric_data_no_genres <- d %>% 
+  select(where(is.numeric)) %>% 
+  select(-starts_with("genre_"))
+
+# 2. Compute Correlation
+corr_matrix <- cor(numeric_data_no_genres, use = "complete.obs")
+
+# 3. Plot Heatmap
+# Since we have fewer variables now, we can set lab = TRUE to see the exact coefficients
+ggcorrplot(corr_matrix, 
+           hc.order = TRUE, 
+           type = "lower",
+           lab = TRUE, 
+           lab_size = 3,
+           title = "Oscar Variable Correlation (Excluding Genres)",
+           colors = c("#6D9EC1", "white", "#E46726"))
+
+```
+
+# Golden Globe Award Conversion Rate to Oscar Best Picture's Award 
+
+## Testing for Golden Globe Award - Drama category
+```{r}
+# 1. Prep the data
+plot_data_gg <- d %>%
+  # Ensure the winner column is numeric for the mean calculation
+  mutate(is_winner = as.numeric(as.character(best_picture_winner))) %>%
+  filter(!is.na(nominee_drama_gg), !is.na(is_winner)) %>%
+  mutate(gg_drama_status = case_when(
+    nominee_drama_gg == 1 & won_drama_gg == 1 ~ "Won GG-Drama",
+    nominee_drama_gg == 1 & won_drama_gg == 0 ~ "Nominated, No Win",
+    TRUE ~ "Not Nominated"
+  )) %>%
+  mutate(gg_drama_status = factor(gg_drama_status, 
+                                  levels = c("Not Nominated", 
+                                             "Nominated, No Win", 
+                                             "Won GG-Drama"))) %>%
+  group_by(gg_drama_status) %>%
+  summarise(
+    win_rate = mean(is_winner, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  # Only calculate Wilson for groups where n > 0 to avoid NAs
+  filter(n > 0) %>%
+  mutate(
+    z = 1.96,
+    denominator = 1 + (z^2 / n),
+    center_adj  = win_rate + (z^2 / (2 * n)),
+    # Use pmax(0, ...) inside the sqrt just in case of tiny precision errors
+    error_term  = z * sqrt(pmax(0, (win_rate * (1 - win_rate) / n) + (z^2 / (4 * n^2)))),
+    
+    lower = (center_adj - error_term) / denominator,
+    upper = (center_adj + error_term) / denominator
+  )
+
+# 2. Plotting (Same as before, now with cleaner data)
+ggplot(plot_data_gg, aes(x = gg_drama_status, y = win_rate, fill = gg_drama_status)) +
+  geom_col(width = 0.7, alpha = 0.8) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, color = "darkred") +
+  geom_text(aes(y = upper, label = percent(win_rate, accuracy = 0.1)), 
+            vjust = -0.8, size = 4) +
+  scale_y_continuous(labels = percent, limits = c(0, 1.1)) + # Bumped limit to 1.1 for text
+  scale_fill_manual(values = c("gray70", "lightcoral", "turquoise4")) +
+  labs(
+    title = "The Golden Globe Drama Ladder",
+    subtitle = "95% Wilson Score Confidence Intervals",
+    x = "Golden Globe Drama Status",
+    y = "Oscar Win Probability"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+## Testing for Golden Globe Award - Musical/Comedy category
+
+```{r}
+# 1. Prep the data for Comedy with Wilson Score Interval
+plot_data_gg_comedy <- d %>%
+  ungroup() %>% 
+  # Ensure the winner column is numeric for calculation
+  mutate(is_winner = as.numeric(as.character(best_picture_winner))) %>%
+  filter(!is.na(nominee_comedy_gg), !is.na(is_winner)) %>%
+  mutate(gg_comedy_status = case_when(
+    nominee_comedy_gg == 1 & won_comedy_gg == 1 ~ "Won GG-Comedy",
+    nominee_comedy_gg == 1 & won_comedy_gg == 0 ~ "Nominated, No Win",
+    TRUE ~ "Not Nominated"
+  )) %>%
+  mutate(gg_comedy_status = factor(gg_comedy_status, 
+                                  levels = c("Not Nominated", 
+                                             "Nominated, No Win", 
+                                             "Won GG-Comedy"))) %>%
+  group_by(gg_comedy_status) %>%
+  summarise(
+    win_rate = mean(is_winner, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # Wilson Score Interval components
+    z = 1.96,
+    denominator = 1 + (z^2 / n),
+    center_adj  = win_rate + (z^2 / (2 * n)),
+    # pmax ensures tiny floating-point errors don't cause NAs in the sqrt
+    error_term  = z * sqrt(pmax(0, (win_rate * (1 - win_rate) / n) + (z^2 / (4 * n^2)))),
+    
+    lower = (center_adj - error_term) / denominator,
+    upper = (center_adj + error_term) / denominator
+  )
+
+# 2. Plotting the results
+ggplot(plot_data_gg_comedy, aes(x = gg_comedy_status, y = win_rate, fill = gg_comedy_status)) +
+  geom_col(width = 0.7, alpha = 0.8) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, color = "darkred") +
+  # Adding percentage labels above the bars
+  geom_text(aes(y = upper, label = percent(win_rate, accuracy = 0.1)), 
+            vjust = -0.8, size = 4) +
+  # scale_y_continuous limits set to 1.1 to leave room for labels
+  scale_y_continuous(labels = percent, limits = c(0, 1.1)) +
+  scale_fill_manual(values = c("gray70", "lightgoldenrod3", "springgreen4")) +
+  labs(
+    title = "The Golden Globe Musical/Comedy Ladder",
+    subtitle = "95% Wilson Score Confidence Intervals",
+    x = "Golden Globe Musical/Comedy Status",
+    y = "Oscar Win Probability"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+## Understanding the actual number of Golden Globe winner that won Oscars' Best Picture
+
+```{r}
+# Create a summary for Drama
+drama_summary <- d %>%
+  group_by(won_drama_gg) %>%
+  summarise(
+    Total_Films = n(),
+    Oscar_Wins = sum(best_picture_winner),
+    Win_Rate = mean(best_picture_winner)
+  ) %>%
+  mutate(Category = "Drama") %>%
+  rename(Won_GG = won_drama_gg)
+
+# Create a summary for Comedy
+comedy_summary <- d %>%
+  group_by(won_comedy_gg) %>%
+  summarise(
+    Total_Films = n(),
+    Oscar_Wins = sum(best_picture_winner),
+    Win_Rate = mean(best_picture_winner)
+  ) %>%
+  mutate(Category = "Comedy") %>%
+  rename(Won_GG = won_comedy_gg)
+
+# Combine them into one professional table
+gg_conversion_table <- bind_rows(drama_summary, comedy_summary) %>%
+  filter(Won_GG == 1) %>% # We only care about the films that actually won the GG
+  select(Category, Total_Films, Oscar_Wins, Win_Rate) %>%
+  mutate(Win_Rate = scales::percent(Win_Rate, accuracy = 0.1))
+
+print(gg_conversion_table)
+
+```
+
+# Does winning for best editing film convert to winning Oscar Best Picture
+
+```{r}
+# 1. Prep the data with Wilson Score Interval calculations
+plot_data <- d %>%
+  ungroup() %>% 
+  # Robust conversion of the winner column to avoid NAs
+  mutate(is_winner = as.numeric(as.character(best_picture_winner))) %>%
+  filter(!is.na(nominee_film_edit), !is.na(is_winner)) %>%
+  mutate(editing_status = case_when(
+    nominee_film_edit == 1 & award_film_edit == 1 ~ "Won Best Editing",
+    nominee_film_edit == 1 & award_film_edit == 0 ~ "Nominated, No Win",
+    TRUE ~ "Not Nominated"
+  )) %>%
+  mutate(editing_status = factor(editing_status, 
+                                 levels = c("Not Nominated", 
+                                            "Nominated, No Win", 
+                                            "Won Best Editing"))) %>%
+  group_by(editing_status) %>%
+  summarise(
+    win_rate = mean(is_winner, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # Wilson Score Interval components
+    z = 1.96,
+    denominator = 1 + (z^2 / n),
+    center_adj  = win_rate + (z^2 / (2 * n)),
+    # pmax protects against tiny precision errors causing NAs in sqrt
+    error_term  = z * sqrt(pmax(0, (win_rate * (1 - win_rate) / n) + (z^2 / (4 * n^2)))),
+    
+    lower = (center_adj - error_term) / denominator,
+    upper = (center_adj + error_term) / denominator
+  )
+
+# 2. Plot with Wilson Error Bars
+ggplot(plot_data, aes(x = editing_status, y = win_rate, fill = editing_status)) +
+  geom_col(width = 0.7, alpha = 0.9) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, color = "darkred") +
+  # Text label positioned above the error bar
+  geom_text(aes(y = upper, label = scales::percent(win_rate, accuracy = 0.1)), 
+            vjust = -1, size = 4) + 
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1.1)) +
+  scale_fill_manual(values = c("gray70", "steelblue3", "dodgerblue4")) +
+  labs(
+    title = "The 'Best Editing' Prerequisite",
+    subtitle = "95% Wilson Score Confidence Intervals for Best Picture Win Rate",
+    x = "Film Editing Recognition Level",
+    y = "Best Picture Win Rate"
+  ) +
+  theme_light() +
+  theme(legend.position = "none")
+```
+
+# The distribution of winners in box office and tomotometer
+
+```{r}
+# Tomatometer vs Box Office
+ggplot(d, aes(x = tomatometer, y = box_office_norm, color = factor(best_picture_winner))) +
+  geom_point(aes(size = total_academy_nominations), alpha = 0.6) +
+  scale_color_manual(values = c("grey", "gold"), name = "Best Picture Winner") +
+  labs(title = "Critic Scores vs. Commercial Success",
+       x = "Tomatometer Score",
+       y = "Box Office (Normalized-Year)") +
+  theme_bw()
+```
+
+
+# The distribution of winners in box office and tomotometer
+
+```{r}
+# Tomatometer vs Popcornmeter
+ggplot(d, aes(x = tomatometer, y = popcornmeter, color = factor(best_picture_winner))) +
+  geom_point(aes(size = total_academy_nominations), alpha = 0.6) +
+  scale_color_manual(values = c("grey", "gold"), name = "Best Picture Winner") +
+  labs(title = "Critic Scores Public VS Expert",
+       x = "Tomatometer Score",
+       y = "Popcornmeter Score") +
+  theme_bw()
+
+```
+
+```{r}
+d[d$popcornmeter<25,]
+```
+
+Before plotting the average Tomatometer and CI, need to see the distribution of the tomatometer
+```{r}
+ggplot(d %>% filter(!is.na(tomatometer)), 
+       aes(x = tomatometer, fill = factor(best_picture_winner), color = factor(best_picture_winner))) +
+  # Using position = "identity" and alpha makes overlapping areas visible
+  geom_histogram(aes(y = ..density..), bins = 30, position = "identity", alpha = 0.4) +
+  geom_density(size = 1, alpha = 0) + 
+  scale_fill_manual(values = c("gray70", "gold3"), labels = c("Non-Winner", "Winner")) +
+  scale_color_manual(values = c("gray50", "gold4"), labels = c("Non-Winner", "Winner")) +
+  labs(
+    title = "Distribution of Tomatometer: Winners vs. Non-Winners",
+    x = "Tomatometer",
+    y = "Density",
+    fill = "Result",
+    color = "Result"
+  ) +
+  theme_minimal()
+```
+
+
+
+```{r}
+# Tomatemeter with Bootstrapped CI
+# Note: This is the most honest way to handle scores that aren't a perfect bell curve
+ggplot(d %>% filter(!is.na(tomatometer)), 
+       aes(x = factor(best_picture_winner), y = tomatometer, fill = factor(best_picture_winner))) +
+  stat_summary(fun = mean, geom = "col", width = 0.6, alpha = 0.8) +
+  # Using bootstrapping to find the 95% CI
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = 0.2, color = "darkred") +
+  scale_x_discrete(labels = c("0" = "Non-Winner", "1" = "Winner")) +
+  scale_fill_manual(values = c("gray70", "#FF6347")) +
+  labs(
+    title = "Average Tomatometer Score by Winner Status",
+    subtitle = "95% Bootstrapped Confidence Intervals",
+    x = "Award Outcome",
+    y = "Average Tomatometer Score (%)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+Check the distribution of popcornmeter before constructing CI
+
+```{r}
+ggplot(d %>% filter(!is.na(popcornmeter)), 
+       aes(x = popcornmeter, fill = factor(best_picture_winner), color = factor(best_picture_winner))) +
+  # Using position = "identity" and alpha makes overlapping areas visible
+  geom_histogram(aes(y = ..density..), bins = 30, position = "identity", alpha = 0.4) +
+  geom_density(size = 1, alpha = 0) + 
+  scale_fill_manual(values = c("gray70", "gold3"), labels = c("Non-Winner", "Winner")) +
+  scale_color_manual(values = c("gray50", "gold4"), labels = c("Non-Winner", "Winner")) +
+  labs(
+    title = "Distribution of Popcornmeter: Winners vs. Non-Winners",
+    x = "Popcornmeter",
+    y = "Density",
+    fill = "Result",
+    color = "Result"
+  ) +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Popcornmeter and respective CI
+# Note: This is the most honest way to handle scores that aren't a perfect bell curve
+ggplot(d %>% filter(!is.na(popcornmeter)), 
+       aes(x = factor(best_picture_winner), y = popcornmeter, fill = factor(best_picture_winner))) +
+  stat_summary(fun = mean, geom = "col", width = 0.6, alpha = 0.8) +
+  # Using bootstrapping to find the 95% CI
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = 0.2, color = "darkred") +
+  scale_x_discrete(labels = c("0" = "Non-Winner", "1" = "Winner")) +
+  scale_fill_manual(values = c("gray70", "#FF6347")) +
+  labs(
+    title = "Average Popcornmeter Score by Winner Status",
+    subtitle = "95% Bootstrapped Confidence Intervals",
+    x = "Award Outcome",
+    y = "Average Popcornmeter Score (%)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+
+
+# Inspecting distribution of variables across winners and non-winners group
+## These distributions are very similar between winning and non-winning group
+```{r}
+# Runtime distribution
+ggplot(d, aes(x = running_time_minutes, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Film Length", x = "Minutes", fill = "Winner") +
+  theme_minimal()
+```
+
+```{r}
+# Words count
+ggplot(d, aes(x = words, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Words Count", x = "Word Count", fill = "Winner") +
+  theme_minimal()
+```
+
+```{r}
+# Character count
+ggplot(d, aes(x = characters, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Character Number", x = "Character Count", fill = "Winner") +
+  theme_minimal()
+```
+
+# Inspecting the distribution of award nominations and the winning rate 
+
+```{r}
+ggplot(d, aes(x = total_academy_nominations, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Award Nominations", x = "Number of Nominations", fill = "Winner") +
+  theme_minimal()
+```
+
+```{r}
+# Note: Using stat_summary with mean_cl_boot is the most robust way 
+# to handle this lumpy/skewed distribution.
+ggplot(d %>% filter(!is.na(total_academy_nominations)), 
+       aes(x = factor(best_picture_winner), y = total_academy_nominations, fill = factor(best_picture_winner))) +
+  # Calculate the mean for the bar height
+  stat_summary(fun = mean, geom = "col", width = 0.6, alpha = 0.8) +
+  # Calculate the 95% CI via Bootstrapping
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = 0.2, color = "darkred") +
+  scale_x_discrete(labels = c("0" = "Non-Winner", "1" = "Winner")) +
+  scale_fill_manual(values = c("gray70", "#E7B800")) +
+  labs(
+    title = "Average Academy Nominations by Winner Status",
+    subtitle = "Error bars represent 95% Bootstrapped Confidence Intervals",
+    x = "Award Outcome",
+    y = "Average Total Nominations"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+```{r}
+# Total number of academy awards excluding best pics with Bootstraping construction of confidence interval
+
+ggplot(d %>% filter(!is.na(total_academy_award_exclude_best_pic)), 
+       aes(x = factor(best_picture_winner), 
+           y = total_academy_award_exclude_best_pic, 
+           fill = factor(best_picture_winner))) +
+  # 1. Calculate the mean for the bars
+  stat_summary(fun = mean, geom = "col", width = 0.6, alpha = 0.8) +
+  # 2. Calculate the 95% CI via Bootstrapping
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = 0.2, color = "darkred") +
+  scale_x_discrete(labels = c("0" = "Non-Winner", "1" = "Winner")) +
+  scale_fill_manual(values = c("gray70", "#00AFBB")) +
+  labs(
+    title = "Average Academy Wins (Excl. Best Picture) by Winner Status",
+    subtitle = "Error bars represent 95% Bootstrapped Confidence Intervals",
+    x = "Award Outcome",
+    y = "Average Wins (Excluding Best Picture)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+# Normalized Box Office
+ggplot(d, aes(x = box_office_norm, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Normalized Box Office (By Year)", x = "Normalized Box Office", fill = "Winner") +
+  theme_minimal()
+```
+
+```{r}
+# Normalized Budget
+d <- d %>%
+  group_by(release_year) %>%
+  mutate(budget_norm = budget_millions / sum(budget_millions, na.rm = TRUE)) %>%
+  ungroup()
+
+
+ggplot(d, aes(x = budget_norm, fill = factor(best_picture_winner))) +
+  geom_density(alpha = 0.4) +
+  labs(title = "Distribution of Normalized Budget (By Year)", x = "Normalized Budget", fill = "Winner") +
+  theme_minimal()
+```
+
+
+```{r}
+# Normalized Budget Error Bar with Bootstrapping
+
+ggplot(d %>% filter(!is.na(budget_norm)), 
+       aes(x = factor(best_picture_winner), y = budget_norm, fill = factor(best_picture_winner))) +
+  # 1. Calculate the mean for the bar height
+  stat_summary(fun = mean, geom = "col", width = 0.7, alpha = 0.8) +
+  # 2. Calculate the 95% CI via Bootstrapping
+  stat_summary(fun.data = mean_cl_boot, geom = "errorbar", width = 0.2, color = "black") +
+  scale_x_discrete(labels = c("0" = "Non-Winner", "1" = "Winner")) +
+  scale_fill_manual(values = c("gray70", "steelblue4")) + # You can keep your preferred colors
+  labs(
+    title = "Average Normalized Budget: Winners vs. Non-Winners",
+    subtitle = "Error bars represent 95% Bootstrapped Confidence Intervals",
+    x = "Best Picture Winner",
+    y = "Mean Normalized Budget"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+
+```{r}
+# Let's look at the normalized budget of the winning film
+# 1. Filter your data for winners only
+winners <- d %>% 
+  filter(best_picture_winner == 1)
+
+# 2. Create the line plot with the corrected label
+ggplot(winners, aes(x = release_year, y = budget_norm)) +
+  # Add the line and points
+  geom_line(color = "#b89b4f", alpha = 0.6) + 
+  geom_point(color = "#b89b4f", size = 3) +
+  
+  # CORRECTED: Use 'film' instead of 'title'
+  geom_text_repel(aes(label = film), 
+                  size = 3, 
+                  box.padding = 0.5, 
+                  max.overlaps = Inf) +
+  
+  # Formatting
+  labs(
+    title = "Normalized Budget Share of Best Picture Winners",
+    x = "Year",
+    y = "Normalized Budget Share",
+    caption = "Data: Best Picture Winners 2000-2025"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::percent)
+```
+# Checking the effect of 2009 onto budget and winning status
+
+```{r}
+# Load the data
+dat <- read.csv("academy_final.csv")
+
+# --- STEP 1: CREATE NORMALIZED BUDGET ---
+# We group by year and calculate the film's budget as a proportion of that year's total
+dat <- dat %>%
+  group_by(release_year) %>%
+  mutate(budget_norm = budget_millions / sum(budget_millions, na.rm = TRUE)) %>%
+  ungroup()
+
+# --- STEP 2: PREP FOR PLOTTING ---
+# Create the period factor (assuming 2009 is the cutoff)
+dat$period <- factor(ifelse(dat$release_year < 2009, "Pre-2009", "Post-2009"), 
+                     levels = c("Pre-2009", "Post-2009"))
+
+# Create factor variables for clearer labels
+dat$outcome <- factor(dat$best_picture_winner, labels = c("Loser", "Winner"))
+
+# --- STEP 3: GENERATE THE PLOT ---
+ggplot(dat, aes(x = outcome, y = budget_norm, fill = outcome)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) + # Hide boxplot outliers since we use jitter
+  geom_jitter(width = 0.2, alpha = 0.4, size = 1) + 
+  facet_wrap(~period) +
+  theme_minimal() +
+  labs(
+    title = "Normalized Budget by Winner Status: Pre- vs. Post-2009",
+    subtitle = "Normalization (Market Share) adjusts for annual industry spending shifts",
+    x = "Academy Award Outcome",
+    y = "Normalized Budget (Share of Annual Total)"
+  ) +
+  scale_fill_brewer(palette = "Set1") +
+  theme(legend.position = "none")
+```
+
+# Now, I want to verify
+1. Can we use PCA to move them into different clusters
+2. If we can separate them into different clusters, what factors determine them the most
+
+```{r}
+# 1. Prepare the data, left out the genre variables
+
+d <- d %>%
+  group_by(release_year) %>%
+  mutate(box_office_norm = box_office_millions / sum(box_office_millions, na.rm = TRUE)) %>%
+  ungroup()
+
+
+pca_data <- d %>% 
+  select(where(is.numeric)) %>% 
+  select(-starts_with("genre_")) %>% 
+  select(-"budget_millions") %>% 
+  select(-"box_office_millions") %>% 
+  select(-"best_picture_winner") #Excluding response variable
+
+# 2. Perform PCA
+# 'scale = TRUE' is critical because 'budget' is in millions while 'tomatometer' is 0-100
+res.pca <- prcomp(pca_data, scale = TRUE)
+
+# 3. Visualization: Individual Films & Variables (Biplot)
+fviz_pca_biplot(res.pca, 
+                label = "var",        # Only label variables to avoid cluttering with film names
+                habillage = as.factor(d$best_picture_winner), # Color by Win Status
+                addEllipses = TRUE,   # Concentration ellipses to show cluster separation
+                col.var = "black",    # Color of variable arrows
+                alpha.ind = 0.5) +    # Transparency for individual films
+  labs(title = "PCA: Oscar Winner Clusters",
+       subtitle = "Variables contributing to Component 1 and 2") +
+  theme_minimal()
+
+# 4. Visualization: Contribution of Variables
+fviz_pca_var(res.pca, col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE) # Avoid overlapping labels
+
+```
+
+# Examine the relationship between directors history/prestige and the winning status of the film
+
+```{r}
+# 1. Define the variables
+dir_vars <- c("best_director_award_before", 
+              "best_director_nominee_before", 
+              "best_director_award_now", 
+              "best_director_nominee_include_now")
+
+# 2. Calculate the stats with Wilson Score Interval
+impact_df <- map_df(dir_vars, function(v) {
+  d %>%
+    filter(!!sym(v) == 1) %>% 
+    summarise(
+      variable = v,
+      # Ensure numeric 0/1 for accurate mean calculation
+      win_rate = mean(as.numeric(as.character(best_picture_winner)), na.rm = TRUE),
+      n = n()
+    )
+}) %>%
+  mutate(
+    # Wilson Score Interval components
+    z = 1.96,
+    denominator = 1 + (z^2 / n),
+    center_adj  = win_rate + (z^2 / (2 * n)),
+    # pmax(0, ...) protects the square root from floating-point errors
+    error_term  = z * sqrt(pmax(0, (win_rate * (1 - win_rate) / n) + (z^2 / (4 * n^2)))),
+    
+    lower = (center_adj - error_term) / denominator,
+    upper = (center_adj + error_term) / denominator,
+    
+    # Labels
+    clean_label = case_when(
+      variable == "best_director_award_now" ~ "Won Best Director (This Year)",
+      variable == "best_director_nominee_include_now" ~ "Nominated for Director (This Year)",
+      variable == "best_director_award_before" ~ "Has Won BD Previously",
+      variable == "best_director_nominee_before" ~ "Has Been Nominated Previously",
+      TRUE ~ variable
+    ),
+    context = if_else(str_detect(variable, "now"), "Current Momentum", "Past Pedigree")
+  )
+
+# 3. Create the Visualization
+ggplot(impact_df, aes(x = reorder(clean_label, win_rate), y = win_rate, fill = context)) +
+  geom_col(alpha = 0.7, width = 0.7) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, color = "darkred", alpha = 0.8) +
+  # Use upper bound for position to keep text labels visible
+  geom_text(aes(y = upper, label = scales::percent(win_rate, accuracy = 0.1)), 
+            hjust = -0.3, fontface = "bold", size = 3.5) +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1.1)) +
+  scale_fill_manual(values = c("Current Momentum" = "#E7B800", "Past Pedigree" = "#00AFBB")) +
+  labs(
+    title = "Directorial Impact on Best Picture Success",
+    subtitle = "95% Wilson Score Confidence Intervals",
+    x = NULL,
+    y = "Probability of Winning Best Picture",
+    fill = "Context"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom",
+    axis.text.y = element_text(face = "bold", size = 10)
+  )
+
+```
+
+# Investigating rating VS winning status
+
+```{r}
+table(d$rating, d$best_picture_winner)
+plot(table(d$best_picture_winner,d$rating))
+```
+
+```{r}
+# As we increase from G to R, it means there is more restriction to the film
+cor(as.numeric(d$best_picture_winner), as.numeric(factor(d$rating)))
+```
+
+```{r}
+# Plot the bar graph
+table(d$rating)
+```
+
+```{r}
+# 1. Calculate win rate and Wilson CI per rating
+rating_stats <- d %>%
+  filter(!is.na(rating)) %>%
+  group_by(rating) %>%
+  summarise(
+    win_rate = mean(best_picture_winner == 1, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    z = 1.96,
+    # Wilson Score math
+    denominator = 1 + (z^2 / n),
+    center_adj  = win_rate + (z^2 / (2 * n)),
+    error_term  = z * sqrt((win_rate * (1 - win_rate) / n) + (z^2 / (4 * n^2))),
+    
+    lower = (center_adj - error_term) / denominator,
+    upper = (center_adj + error_term) / denominator
+  )
+
+# 2. Plotting
+ggplot(rating_stats, aes(x = reorder(rating, -win_rate), y = win_rate, fill = win_rate)) +
+  geom_col(alpha = 0.8) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2, color = "darkred") +
+  scale_y_continuous(labels = percent) +
+  scale_fill_gradient(low = "lightsteelblue", high = "steelblue4") +
+  labs(
+    title = "Best Picture Win Rate by Movie Rating",
+    subtitle = "Error bars indicate 95% Wilson Score Confidence Intervals",
+    x = "MPAA Rating",
+    y = "Win Rate (%)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+
+
+

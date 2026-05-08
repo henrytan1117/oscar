@@ -1,3 +1,6 @@
+
+### This file contains code that extract award history for golden globe awards in the 21st century.
+
 library(rvest)
 library(purrr)
 library(dplyr)

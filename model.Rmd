@@ -1,7 +1,10 @@
 ---
-title: "Statistical Model"
-output: html_document
+title: "Statistical Model Fitting"
+output: pdf_document
 ---
+
+# This file contains codes that produce all model-fitting related visuals in this project. 
+
 
 # Feature Engineering
 

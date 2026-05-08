@@ -1,3 +1,7 @@
+
+### This file contains code that extract film information from rotten tomato webpage.
+
+
 library(httr)
 library(stringr)
 library(readr)

@@ -1,3 +1,8 @@
+
+### This file contains code that convert information scrapped from rotten tomato into data frame
+### and format the data types.
+
+
 library(stringr)
 library(readr)
 

@@ -1,3 +1,7 @@
+
+### This file contains code that extract film name, number of nominations and award
+### under the Academy Award in the 21st century.
+
 library(rvest)
 library(purrr)
 library(dplyr)
