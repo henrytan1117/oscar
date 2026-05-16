@@ -86,6 +86,65 @@ Technical validation from editing peers acts as a crucial, reliable gatekeeper f
 
 For detailed visuals, analysis, and explanation, please refer to our deck or report. 
 
+## Model Fitting
+
+### Model Diagnostics & OLS Violations
+Initially, an Ordinary Least Squares (OLS) linear regression model was fit against our primary predictors. However, strict diagnostic parsing revealed critical linear Regression Violations:  
+
+- Heteroscedasticity: Severe non-random parallel tracking in Residuals vs. Fitted plots
+- Non-Normality: Deep distributional skewing clearly confirmed via the Q-Q Residuals plot
+- Conclusion: Parametric linear constraints rejected; transitioned to binomial logistic models
+
+Upon moving to a Binomial Logistic Regression model, standard assumptions were cleanly satisfied. Diagnostic checking of the Pearson residuals confirmed that continuous variables safely maintain a linear relationship with target log-odds, showing uniform distribution and zero multicollinearity.
+
+### Performance Metrics & Model Comparison
+(1) Final Logistic Regression
+Optimized via backward subset selection and L1 LASSO regularization to minimize the Akaike Information Criterion, the final model achieved an AIC of 104.92.  
+
+Using an optimal decision threshold of 0.1129, the classification performance balances sensitivity and specificity to ensure potential winners are not ignored:  
+- Global Classification Accuracy: 85.0%
+- True Positive Rate (Sensitivity): 92.3%
+- True Negative Rate (Specificity): 84.0%
+- False Negative Rate (Surprise Loss): 7.69%
+- Training Area Under Curve (ROC-AUC): 0.925
+- Validation Area Under Curve (ROC-AUC): 0.885
+
+(2) Random Forest Sanity Check
+To validate the logistic boundaries against non-linear patterns, a stratified Random Forest model was trained on an even split of 26 winners and 26 losers.  
+
+The Mean Decrease Gini chart matched the logistic findings, ranking non-Best Picture wins and budgets as top features. However, the Random Forest performed notably worse, yielding a higher Out-Of-Bag (OOB) error rate of 20.4% and a low True Positive Rate of 65.4%. This performance gap confirms that for smaller, specialized datasets, logistic regression remains the more robust choice. 
+
+For actual regression results, please refer to the deck and report. 
+
+
+## Core Oscars' Best Picture Predictors
+The statistical analysis exposes a sharp contrast between genuine institutional signals and high-profile industry metrics:
+
+(1) Significant Success Predictors ($\alpha = 0.05$)
+- Craft Excellence (The Sweep Effect): Every single non-Best Picture Academy Award won by a film in the same year more than doubles its odds of winning Best Picture ($\text{Odds Ratio} = 2.23$). Broad institutional support across creative departments is the single strongest signal of voter consensus.
+- The Film Editing Prerequisite: Securing a nomination in Best Film Editing multiplies a film's winning odds by 5.17 times ($\beta = 1.642$). Technical acclaim in editing acts as a vital baseline milestone for top honors.
+- Current Directorial Momentum: Winning Best Director at the concurrent ceremony boosts Best Picture odds by 5.07 times ($\beta = 1.622$). However, a director's long-term past pedigree (previous career wins or nominations) offers no statistical advantage once a movie is nominated.
+
+(2) The Post-2009 "Budget Penalty"
+The Likelihood Ratio Test uncovered a highly significant interaction between a film's normalized budget and the post-2009 era ($p = 0.004$). Prior to 2009, budgets between winners and losers were entirely comparable.  
+
+However, following the shift to preferential ranking ballots and an expanded 10-nominee pool, a distinct budget penalty emerged:  
+- Pre-2009 Era: Budget Odds Effect = 0.293 (Statistically Insignificant)
+- Post-2009 Era: Budget Odds Effect = <0.001 (Highly Significant Penalty)
+  
+This mathematical shift proves the Academy has stepped away from high-budget studio epics, opting instead for smaller-scale, auteur-driven personal narratives that build a stronger voter consensus across ranked ballots
+
+## Repository Structure & Resources
+- academy_final.csv: The primary high-dimensional matrix containing 201 observations and the engineered text/thematic predictors.
+- report.pdf: The full academic report detailing extraction hurdles, OLS violations, and deviance analyses.
+- data_extraction_file/: Source files mapping raw programmatic text extractions from online databases.
+- merging/: Data repository hosting individual unmerged .csv files sorted by key precursors, databases, and variables.
+- eda.Rmd: R Markdown notebook exploring language weights, mosaic rating spreads, and Wilson Score confidence intervals.
+- model.Rmd: R Markdown model sandbox executing multivariate logistic regressions, backward selection passes, and Gini Random Forest trees.
+
+## Contributions & Acknowledgements
+This project represents a joint collaboration between Henry Tan (modeling, statistical testing, and EDA) and Casper Liao (data engineering, tokenization, and multi-source scraping).  Completed as the final capstone project for STSCI 4100: Multivariate Analysis at Cornell University. We thank our advisor, Dana Yang, Assistant Professor at Cornell University, for their insights into structural award trends. 
+
 
 
 
